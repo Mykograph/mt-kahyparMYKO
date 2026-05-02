@@ -219,12 +219,12 @@ namespace mt_kahypar {
         const HyperedgeWeight benefit = Rollback::benefit(phg, e, m_id, m, r);;
         const HyperedgeWeight penalty = Rollback::penalty(phg, e, m_id, m, r);
 
-        if ( benefit > 0 ) {
+        if ( benefit != 0 ) {
           // increase gain of v by benefit
           __atomic_fetch_add(&m.gain, benefit, __ATOMIC_RELAXED);
         }
 
-        if ( penalty > 0 ) {
+        if ( penalty != 0 ) {
           // decrease gain of v by penalty
           __atomic_fetch_sub(&m.gain, penalty, __ATOMIC_RELAXED);
         }
