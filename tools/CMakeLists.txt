@@ -21,6 +21,15 @@ target_link_libraries(MtxToGraph MtKaHyPar-BuildFlags)
 add_executable(FixedVertexFileGenerator fixed_vertex_file_generator.cc)
 target_link_libraries(FixedVertexFileGenerator MtKaHyPar-ToolsMin)
 
+#######   Added by mykolas   #######
+
+##add_executable(MeinNeuesTool MeinNeuesTool.cc)
+##target_link_libraries(MeinNeuesTool ${KAHYPAR_LINK_LIBRARIES})
+
+add_executable(WeightGenerator weight_generator.cc)
+target_link_libraries(WeightGenerator MtKaHyPar-BuildTools )
+
+
 
 #################################################################
 ## Tools with more dependencies                                ##

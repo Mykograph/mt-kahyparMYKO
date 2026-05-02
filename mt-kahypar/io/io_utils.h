@@ -3,7 +3,7 @@
  *
  * This file is part of Mt-KaHyPar.
  *
- * Copyright (C) 2019 Lars Gottesbüren <lars.gottesbueren@kit.edu>
+ * Copyright (C) 2019 Lars GottesbÃ¼ren <lars.gottesbueren@kit.edu>
  * Copyright (C) 2019 Tobias Heuer <tobias.heuer@kit.edu>
  * Copyright (C) 2026 Nikolai Maas <nikolai.maas@kit.edu>
  *
@@ -218,6 +218,16 @@ ResultType read_number(char* mapped_file, size_t& pos, const size_t current_line
   }
 
   ResultType number = 0;
+
+  bool is_negative = false;
+  if ( mapped_file[pos] == '-' ) {
+    is_negative = true;
+    ++pos;
+    if ( is_line_ending(mapped_file, pos) || mapped_file[pos] == ' ' ) {
+      parsing_exception(current_line, std::string("expected to find ") + expected_type + ", but no number directly after '-'");
+    }
+  }
+
   for ( ; pos < length; ++pos ) {
     if ( mapped_file[pos] == ' ' || is_line_ending(mapped_file, pos) ) {
       while ( mapped_file[pos] == ' ' ) {
@@ -225,12 +235,13 @@ ResultType read_number(char* mapped_file, size_t& pos, const size_t current_line
       }
       break;
     }
+    
     if (mapped_file[pos] < '0' || mapped_file[pos] > '9') {
       parsing_exception(current_line, "invalid symbol: " + std::string(1, mapped_file[pos]));
     }
 
     ResultType digit = mapped_file[pos] - '0';
-    if (number > (std::numeric_limits<ResultType>::max() - digit) / 10) {
+    if (number > (std::numeric_limits<ResultType>::max() - digit) / 10 || ((std::numeric_limits<ResultType>::min() + digit) / 10 > number && is_negative)) {
       // if the number would overflow, read the whole number and return a nice error message
       std::string number_as_string = STR(number);
       for ( ; mapped_file[pos] != ' ' && !is_line_ending(mapped_file, pos); ++pos ) {
@@ -243,6 +254,10 @@ ResultType read_number(char* mapped_file, size_t& pos, const size_t current_line
       parsing_exception(current_line, msg);
     }
     number = number * 10 + (mapped_file[pos] - '0');
+  }
+  
+  if (is_negative) {
+    number = -number;
   }
   return number;
 }
