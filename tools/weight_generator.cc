@@ -18,11 +18,8 @@
 using Hypergraph = mt_kahypar::ds::StaticHypergraph;
 
 using namespace mt_kahypar;
-
-using namespace mt_kahypar;
 namespace fs = std::filesystem;
 
-const int DEFAULT_K = 2;
 const int DEFAULT_GENERATE_TYPE = 0; // 0: random weights, 1: partition-based weights
 const float DEFAULT_RANDOM_WEIGHT_PROBABILITY = 0.3f; // 30% chance to have a weight > 1
 const int NEGATIVE_WEIGHT = 10; // Penalty for cut edges in partition-based weighting
@@ -121,7 +118,6 @@ void setEdgeWeightsBasedOnPartition(
 HypernodeID generate_weights_from_hgp(const fs::path hg_path,
                                        const fs::path weighted_path,
                                        const fs::path partition_path,
-                                       int k,
                                        int generate_type,
                                        bool output_print)
 {
@@ -180,6 +176,7 @@ HypernodeID generate_weights_from_hgp(const fs::path hg_path,
     if (!output_print) {
         std::cout << output;
     }
+    return num_hypernodes;
 }
 
 
@@ -188,7 +185,6 @@ int main(int argc, char* argv[]) {
     std::string weighted_dir;
 
     std::string partition_path;
-    int k = 2;
     int generate_type = 0; 
 
     CLI::App app;
@@ -201,10 +197,9 @@ int main(int argc, char* argv[]) {
 
     //optional arguments
     CLI::Option* opt = app.add_option("-p,--partitioned", partition_path, "Partition path (optional)");
-    CLI::Option* opt_k = app.add_option("-k,--k", k, "Number of partitions (optional) - only needed if partition is provided)")->needs(opt);
 
     bool output_print = false;
-    app.add_flag("-no,--no-output", output_print, "Disable output to console (optional)")->default_val("false")->capture_default_str();
+    app.add_flag("-n,--no-output", output_print, "Disable output to console (optional)")->default_val("false")->capture_default_str();
 
         
 
@@ -250,10 +245,10 @@ int main(int argc, char* argv[]) {
     if ((fs::is_regular_file(hypergraph_path_p) && hypergraph_path_p.extension() == ".hgr")) {
         if (opt->count() > 0) {
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, k, generate_type, output_print);
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, generate_type, output_print);
     } else {
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights" + ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), DEFAULT_K, generate_type, output_print);
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), generate_type, output_print);
     }
     } else if (fs::is_directory(hypergraph_path_p)) {
         for (const auto& entry : fs::directory_iterator(hypergraph_path_p)) {
@@ -261,10 +256,10 @@ int main(int argc, char* argv[]) {
                 fs::path weighted_file;
                 if (opt->count() > 0) {
                     weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
-                    generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, partition_path_p, k, generate_type, output_print);
+                    generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, partition_path_p, generate_type, output_print);
                 } else {
                     weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights" + ".hgr");
-                    generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, fs::path(), DEFAULT_K, generate_type, output_print);
+                    generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, fs::path(), generate_type, output_print);
                 }
             }
         }
