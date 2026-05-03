@@ -193,7 +193,7 @@ int main(int argc, char* argv[]) {
     app.add_option("-H,--hypergraph", hypergraph_path, "Hypergraph Filename or directory")->required();
     app.add_option("-w,--weighted", weighted_dir, "Weighted directory")->required();
 
-    app.add_option("-g,--generate-type", generate_type, "Type of weight generation: 0 for random, 1 for partition-based (optional)")->check(CLI::Range(0, 1));
+    app.add_option("-g,--generate-type", generate_type, "Type of weight generation: 0 for random, 1 for partition-based (optional)");
 
     //optional arguments
     CLI::Option* opt = app.add_option("-p,--partitioned", partition_path, "Partition path (optional)");
@@ -219,14 +219,7 @@ int main(int argc, char* argv[]) {
                 std::make_error_code(std::errc::not_a_directory)
             );
         }
-
-    if (!(fs::is_regular_file(hypergraph_path_p))) {
-        throw fs::filesystem_error(
-            "partition path is not a file",
-            partition_path,
-            std::make_error_code(std::errc::invalid_argument)
-        );
-    }
+    
 
     
     HypernodeID generated_weights;
@@ -244,6 +237,13 @@ int main(int argc, char* argv[]) {
 
     if ((fs::is_regular_file(hypergraph_path_p) && hypergraph_path_p.extension() == ".hgr")) {
         if (opt->count() > 0) {
+            if (!(fs::is_regular_file(hypergraph_path_p))) {
+                throw fs::filesystem_error(
+                    "partition path is not a file",
+                    partition_path,
+                    std::make_error_code(std::errc::invalid_argument)
+                );
+            }
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
         generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, generate_type, output_print);
     } else {
@@ -255,14 +255,21 @@ int main(int argc, char* argv[]) {
             if (entry.is_regular_file() && entry.path().extension() == ".hgr") {
                 fs::path weighted_file;
                 if (opt->count() > 0) {
+                    if (!(fs::is_regular_file(hypergraph_path_p))) {
+                        throw fs::filesystem_error(
+                            "partition path is not a file",
+                            partition_path,
+                            std::make_error_code(std::errc::invalid_argument)
+                        );
+                    }
                     weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
                     generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, partition_path_p, generate_type, output_print);
                 } else {
                     weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights" + ".hgr");
                     generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, fs::path(), generate_type, output_print);
                 }
-            }
         }
+    }
     } else {
         std::cerr << "Invalid hypergraph path: " << hypergraph_path_p << std::endl;
         return 1;
