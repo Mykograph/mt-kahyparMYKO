@@ -122,7 +122,8 @@ HypernodeID generate_weights_from_hgp(const fs::path hg_path,
                                        const fs::path weighted_path,
                                        const fs::path partition_path,
                                        int k,
-                                       int generate_type)
+                                       int generate_type,
+                                       bool output_print)
 {
     HyperedgeID num_hyperedges = 0;
     HypernodeID num_hypernodes = 0;
@@ -176,7 +177,9 @@ HypernodeID generate_weights_from_hgp(const fs::path hg_path,
     }   
     write_hgr_file(weighted_path, hyperedges, edge_weights, num_hypernodes);
 
-    std::cout << output;
+    if (!output_print) {
+        std::cout << output;
+    }
 }
 
 
@@ -199,6 +202,9 @@ int main(int argc, char* argv[]) {
     //optional arguments
     CLI::Option* opt = app.add_option("-p,--partitioned", partition_path, "Partition path (optional)");
     CLI::Option* opt_k = app.add_option("-k,--k", k, "Number of partitions (optional) - only needed if partition is provided)")->needs(opt);
+
+    bool output_print = false;
+    app.add_flag("-no,--no-output", output_print, "Disable output to console (optional)")->default_val("false")->capture_default_str();
 
         
 
@@ -250,10 +256,10 @@ int main(int argc, char* argv[]) {
 
     if (opt->count() > 0) {
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, k, generate_type);
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, k, generate_type, output_print);
     } else {
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights" + ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), DEFAULT_K, generate_type);
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), DEFAULT_K, generate_type, output_print);
     }
     return 0;
 }
