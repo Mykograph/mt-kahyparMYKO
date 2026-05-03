@@ -22,6 +22,12 @@ using namespace mt_kahypar;
 using namespace mt_kahypar;
 namespace fs = std::filesystem;
 
+const int DEFAULT_K = 2;
+const int DEFAULT_GENERATE_TYPE = 0; // 0: random weights, 1: partition-based weights
+const float DEFAULT_RANDOM_WEIGHT_PROBABILITY = 0.3f; // 30% chance to have a weight > 1
+const int NEGATIVE_WEIGHT = 10; // Penalty for cut edges in partition-based weighting
+const int INVERSE_WEIGHT_MULTIPLIER = 10; // Multiplier for inverse weights in partition-based weighting
+
 void output_function(const std::string& message) {
     std::cout << "#############Finished Program################" << std::endl;
     std::cout << message << std::endl;
@@ -57,7 +63,7 @@ void initialise_random_edge_weights(vec<HyperedgeWeight>& edge_weights, float p)
     
     for (HyperedgeID i = 0; i < edge_weights.size(); i++) {
         if (prob(rng) < p) {
-            edge_weights[i] = 1;//-weight(rng);  // random weight between 2 and 10
+            edge_weights[i] = -weight(rng);  // random weight between 2 and 10
         } else {
             edge_weights[i] = 1;
         }
@@ -85,7 +91,8 @@ void setEdgeWeightsBasedOnPartition(
     const io::HyperedgeVector& hyperedges,
     const std::vector<PartitionID>& partition,
     vec<HyperedgeWeight>& edge_weights,
-    std::string* output)
+    std::string* output,
+    int mode)
 {
     for (HyperedgeID i = 0; i < hyperedges.size(); i++) {
         const auto& he = hyperedges[i];
@@ -97,7 +104,14 @@ void setEdgeWeightsBasedOnPartition(
         for (HypernodeID pin : he) {
             if (partition[pin] != first) { is_cut_edge = true; break; }
         }
-        edge_weights[i] = is_cut_edge ? -10 : 1;
+        if(mode == 0) {
+            edge_weights[i] = is_cut_edge ? -NEGATIVE_WEIGHT : edge_weights[i]; // cut edges get weight -10, others keep their weight (or get 1 if not previously set)
+        } else if (mode == 1) {
+            edge_weights[i] = is_cut_edge ? edge_weights[i] - NEGATIVE_WEIGHT : edge_weights[i]; // cut edges get weight 10, others keep their weight (or get 1 if not previously set)
+        } else {
+            edge_weights[i] = is_cut_edge ? -(int)( (double)1 / (double) edge_weights[i] * INVERSE_WEIGHT_MULTIPLIER) : edge_weights[i]; // cut edges get inverse weight, others keep their weight (or get 1 if not previously set)
+        }
+        
         if(is_cut_edge) {
             *output += ("Hyperedge " + std::to_string(i) + " is a cut edge. Assigning weight -10.\n");
         }
@@ -107,8 +121,8 @@ void setEdgeWeightsBasedOnPartition(
 HypernodeID generate_weights_from_hgp(const fs::path hg_path,
                                        const fs::path weighted_path,
                                        const fs::path partition_path,
-                                       int k=2,
-                                       int generate_type = 0)
+                                       int k,
+                                       int generate_type)
 {
     HyperedgeID num_hyperedges = 0;
     HypernodeID num_hypernodes = 0;
@@ -129,23 +143,38 @@ HypernodeID generate_weights_from_hgp(const fs::path hg_path,
         output += "Warning: The input hypergraph file " + hg_path.string() + " already has edge weights or node weights, these will be replaced. \n";
     }
     
-            vec<HyperedgeWeight> edge_weights(num_hyperedges);
+    vec<HyperedgeWeight> edge_weights(num_hyperedges);
 
-    switch (generate_type) {
-        case 0:
-            
-            initialise_random_edge_weights(edge_weights, 0.3f ); // 30% chance to have a weight > 1
-
-            write_hgr_file(weighted_path, hyperedges, edge_weights, num_hypernodes);
-            return num_hypernodes;
-        case 1:
-            // Partition lesen
-            std::vector<PartitionID> partition = readPartitionFile(partition_path, num_hypernodes);
-            setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output);
-
-            write_hgr_file(weighted_path, hyperedges, edge_weights, num_hypernodes);
-            return num_hypernodes;
-    }
+    if (partition_path.empty()) {
+        switch (generate_type) {
+            case 0:
+                std::fill(edge_weights.begin(), edge_weights.end(), 1);
+                break;
+            case 1:
+        
+                initialise_random_edge_weights(edge_weights, DEFAULT_RANDOM_WEIGHT_PROBABILITY ); 
+        }
+    } else {
+        // Partition lesen
+        std::vector<PartitionID> partition = readPartitionFile(partition_path, num_hypernodes);
+        // Falls bereits edge weights vorhanden sind, diese als Basis nehmen, ansonsten mit 1 initialisieren
+                if (hyperedge_weights.empty()) {
+                    std::fill(edge_weights.begin(), edge_weights.end(), 1);
+                } else {
+                    edge_weights = hyperedge_weights;
+                }  
+        switch (generate_type) {
+            case 0:
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 0);
+                break;
+            case 1:
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 1);
+                break;
+            case 2: 
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 2);
+        }
+    }   
+    write_hgr_file(weighted_path, hyperedges, edge_weights, num_hypernodes);
 
     std::cout << output;
 }
@@ -157,6 +186,7 @@ int main(int argc, char* argv[]) {
 
     std::string partition_path;
     int k = 2;
+    int generate_type = 0; 
 
     CLI::App app;
 
@@ -164,9 +194,13 @@ int main(int argc, char* argv[]) {
     app.add_option("-H,--hypergraph", hypergraph_path, "Hypergraph Filename or directory")->required();
     app.add_option("-w,--weighted", weighted_dir, "Weighted directory")->required();
 
+    app.add_option("-g,--generate-type", generate_type, "Type of weight generation: 0 for random, 1 for partition-based (optional)")->check(CLI::Range(0, 1));
+
     //optional arguments
     CLI::Option* opt = app.add_option("-p,--partitioned", partition_path, "Partition path (optional)");
     CLI::Option* opt_k = app.add_option("-k,--k", k, "Number of partitions (optional) - only needed if partition is provided)")->needs(opt);
+
+        
 
     CLI11_PARSE(app, argc, argv);
 
@@ -204,12 +238,22 @@ int main(int argc, char* argv[]) {
     
     HypernodeID generated_weights;
     
+    // Generate weights based on the provided options
+    //Optiona without partition
+    //option 0: random weights,
+    //option 1: all 1's
+    //
+    //Optiona with partition
+    //option 0: weights based on partition
+    //option 1: weights based on partition with relative weights (cut edges weight = weight -x)
+    //option 2: weights based on partition with relative weights (cut edges weight = weight * -(1/x))
+
     if (opt->count() > 0) {
-        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() + ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, k);
+        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, k, generate_type);
     } else {
         fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights" + ".hgr");
-        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), k, 0);
+        generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), DEFAULT_K, generate_type);
     }
     return 0;
 }
