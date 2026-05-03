@@ -52,7 +52,7 @@ void initialise_random_edge_weights(vec<HyperedgeWeight>& edge_weights, float p)
     
     for (HyperedgeID i = 0; i < edge_weights.size(); i++) {
         if (prob(rng) < p) {
-            edge_weights[i] = -weight(rng);  // random weight between 2 and 10
+            edge_weights[i] = 1;//-weight(rng);  // random weight between 2 and 10
         } else {
             edge_weights[i] = 1;
         }
@@ -131,13 +131,18 @@ void setEdgeWeightsBasedOnPartition(
 {
     for (HyperedgeID i = 0; i < hyperedges.size(); i++) {
         const auto& he = hyperedges[i];
-        if (he.empty()) { edge_weights[i] = 1; continue; }
+        if (he.empty()) { 
+            std::cout << "Warning: Hyperedge " << i << " is empty. Assigning default weight of 1." << std::endl;
+            edge_weights[i] = 1; continue; }
         PartitionID first = partition[he[0]];
         bool is_cut_edge = false;
         for (HypernodeID pin : he) {
             if (partition[pin] != first) { is_cut_edge = true; break; }
         }
         edge_weights[i] = is_cut_edge ? -10 : 1;
+        if(is_cut_edge) {
+            std::cout << "Hyperedge " << i << " is a cut edge. Assigning weight -10." << std::endl;
+        }
     }
 }
 
