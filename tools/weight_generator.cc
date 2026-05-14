@@ -90,7 +90,7 @@ void setEdgeWeightsBasedOnPartition(
     vec<HyperedgeWeight>& edge_weights,
     std::string* output,
     int mode,
-    double negative_weight_chance = 1.0)
+    double negative_weight_chance)
 {
     std::mt19937 rng(std::random_device{}());
     std::uniform_real_distribution<float> prob(0.0f, 1.0f);
@@ -170,13 +170,13 @@ HypernodeID generate_weights_from_hgp(const fs::path hg_path,
                 }  
         switch (generate_type) {
             case 0:
-                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 0);
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 0, 0.0);
                 break;
             case 1:
-                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 1);
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 1, 0.0);
                 break;
             case 2: 
-                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 2);
+                setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 2, 0.0);
                 break;
             case 3: //Only set percentage of cut edges to weight -10
                 setEdgeWeightsBasedOnPartition(hyperedges, partition, edge_weights, &output, 3, stochastic);
