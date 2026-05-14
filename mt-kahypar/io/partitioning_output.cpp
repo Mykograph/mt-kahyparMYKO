@@ -439,6 +439,7 @@ namespace mt_kahypar::io {
     }
     printKeyValue("Imbalance", metrics::imbalance(hypergraph, context));
     printKeyValue("Partitioning Time", std::to_string(elapsed_seconds.count()) + " s");
+    printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
   }
 
   using MCell = parallel::IntegralAtomicWrapper<HyperedgeWeight>;

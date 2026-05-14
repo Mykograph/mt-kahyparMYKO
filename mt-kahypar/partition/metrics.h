@@ -28,6 +28,7 @@
 #pragma once
 
 #include "mt-kahypar/partition/context.h"
+#include <tbb/enumerable_thread_specific.h>
 
 namespace mt_kahypar {
 
@@ -53,6 +54,19 @@ template<typename PartitionedHypergraph>
 HyperedgeWeight contribution(const PartitionedHypergraph& hg,
                              const HyperedgeID he,
                              const Objective objective);
+
+// ! Computes for the given partitioned hypergraph the amount of cut negative edges
+template<typename PartitionedHypergraph> 
+HyperedgeID negative_cut_edges( const PartitionedHypergraph& hg,
+                                const bool parallel = true) {
+  tbb::enumerable_thread_specific<HyperedgeID> num_negative_cut_edges(0);
+  hg.doParallelForAllEdges([&](const HyperedgeID he) {
+    if (hg.edgeWeight(he) < 0 && hg.connectivity(he) > 1) {
+      num_negative_cut_edges.local()++;
+    }
+  });
+  return num_negative_cut_edges.combine(std::plus<>());
+}
 
 template<typename PartitionedHypergraph>
 bool isBalanced(const PartitionedHypergraph& phg, const Context& context);
