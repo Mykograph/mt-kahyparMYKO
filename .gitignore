@@ -12,6 +12,7 @@ clang-debug/*
 *.cfg~
 build/*
 build2/*
+build-two-hop/*
 build_debug/*
 build_release/*
 build_clang/*
