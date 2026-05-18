@@ -197,6 +197,17 @@ To enable writing the partition to a file after partitioning, you can add the fo
 
 The partition file name is generated automatically based on parameters such as `k`, `imbalance`, `seed` and the input file name and will be located in the folder specified by `--partition-output-folder`. If you do not provide a partition output folder, the partition file will be placed in the same folder as the input hypergraph file.
 
+### Reference Partition Comparison
+
+You can provide a previously computed partition to compare cut edges from the current partition. When this option is set, the output will include:
+
+- `Cut edges in both partitions`
+- `Cut edges only in current partition`
+
+Use:
+
+    --reference-partition-file=<path/to/partition-file>
+
 ### Display Options
 
 There are several useful options to control which output is shown:

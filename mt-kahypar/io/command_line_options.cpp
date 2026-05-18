@@ -213,6 +213,11 @@ namespace mt_kahypar {
       context.partition.graph_partition_output_folder,
       "Output folder for partition file"
     )->check(CLI::ExistingPath);
+    app.add_option(
+      "--reference-partition-file",
+      context.partition.reference_partition_filename,
+      "Reference partition file used to compare cut edges"
+    )->check(CLI::ExistingFile);
     auto config_option = app.add_option_function<std::string>(
       "-c,--config", [&](const std::string& file) {
         parseIniToContext(context, file, false);
