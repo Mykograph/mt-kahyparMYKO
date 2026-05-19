@@ -22,7 +22,7 @@ namespace fs = std::filesystem;
 
 const int DEFAULT_GENERATE_TYPE = 0; // 0: random weights, 1: partition-based weights
 const float DEFAULT_RANDOM_WEIGHT_PROBABILITY = 0.3f; // 30% chance to have a weight > 1
-const int NEGATIVE_WEIGHT = 10; // Penalty for cut edges in partition-based weighting
+int NEGATIVE_WEIGHT = 10; // Penalty for cut edges in partition-based weighting
 const int INVERSE_WEIGHT_MULTIPLIER = 10; // Multiplier for inverse weights in partition-based weighting
 
 void output_function(const std::string& message) {
@@ -211,7 +211,7 @@ int main(int argc, char* argv[]) {
     //optional arguments
     CLI::Option* opt = app.add_option("-p,--partitioned", partition_path, "Partition path (optional)");
     CLI::Option* opt_stoch = app.add_option("-s,--stochastic", stochastic, "Stochastic partition path (optional)");
-
+    CLI::Option* opt_generate = app.add_option("-d,--default-neg", NEGATIVE_WEIGHT, "Default negative value for cut edges (optional)")->default_val(NEGATIVE_WEIGHT)->capture_default_str();
     bool output_print = false;
     app.add_flag("-n,--no-output", output_print, "Disable output to console (optional)")->default_val("false")->capture_default_str();
 
@@ -258,10 +258,10 @@ int main(int argc, char* argv[]) {
                     std::make_error_code(std::errc::invalid_argument)
                 );
             }
-        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
+        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() );
         generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, partition_path_p, generate_type, output_print, stochastic);
     } else {
-        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() + "-withWeights" + ".hgr");
+        fs::path weighted_file = weighted_dir_path / (hypergraph_path_p.filename().string() );
         generated_weights = generate_weights_from_hgp(hypergraph_path_p, weighted_file, fs::path(), generate_type, output_print, stochastic);
     }
     } else if (fs::is_directory(hypergraph_path_p)) {
@@ -276,10 +276,10 @@ int main(int argc, char* argv[]) {
                             std::make_error_code(std::errc::invalid_argument)
                         );
                     }
-                    weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights-withPartition:"+ partition_path_p.filename().string() +  ".hgr");
+                    weighted_file = weighted_dir_path / (entry.path().filename().string());
                     generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, partition_path_p, generate_type, output_print, stochastic);
                 } else {
-                    weighted_file = weighted_dir_path / (entry.path().filename().string() + "-withWeights" + ".hgr");
+                    weighted_file = weighted_dir_path / (entry.path().filename().string() );
                     generated_weights = generate_weights_from_hgp(entry.path(), weighted_file, fs::path(), generate_type, output_print, stochastic);
                 }
         }
