@@ -39,7 +39,6 @@
 #include "mt-kahypar/parallel/memory_pool.h"
 #include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/partition/metrics.h"
-#include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
 #include "mt-kahypar/utils/hypergraph_statistics.h"
 #include "mt-kahypar/utils/memory_tree.h"
@@ -471,15 +470,6 @@ namespace mt_kahypar::io {
     }
     printKeyValue("Imbalance", metrics::imbalance(hypergraph, context));
     printKeyValue("Partitioning Time", std::to_string(elapsed_seconds.count()) + " s");
-    if ( context.partition.reference_partition_filename != "" ) {
-      std::vector<PartitionID> reference_partition;
-      io::readPartitionFile(context.partition.reference_partition_filename,
-                            hypergraph.initialNumNodes(),
-                            reference_partition);
-      const auto [cut_in_both, cut_only_current] = referencePartitionCutOverlap(hypergraph, reference_partition);
-      printKeyValue("Cut edges in both partitions", cut_in_both);
-      printKeyValue("Cut edges only in current partition", cut_only_current);
-    }
     printKeyValue("Positive Cut Edges", metrics::positive_cut_edges(hypergraph, true));
     printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
   }

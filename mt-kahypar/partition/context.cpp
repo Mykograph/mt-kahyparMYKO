@@ -52,9 +52,6 @@ namespace mt_kahypar {
     if ( params.write_partition_file ) {
       str << "  Partition File:                     " << params.graph_partition_filename << std::endl;
     }
-    if ( params.reference_partition_filename != "" ) {
-      str << "  Reference Partition File:           " << params.reference_partition_filename << std::endl;
-    }
     if ( params.preset_type != PresetType::UNDEFINED ) {
       str << "  Preset:                             " << params.preset_type << std::endl;
     }

@@ -76,7 +76,6 @@ struct PartitioningParameters {
   std::string fixed_vertex_filename { };
   std::string graph_partition_output_folder {};
   std::string graph_partition_filename { };
-  std::string reference_partition_filename { };
   std::string graph_community_filename { };
   std::string preset_file { };
 };
