@@ -480,6 +480,7 @@ namespace mt_kahypar::io {
       printKeyValue("Cut edges in both partitions", cut_in_both);
       printKeyValue("Cut edges only in current partition", cut_only_current);
     }
+    printKeyValue("Positive Cut Edges", metrics::positive_cut_edges(hypergraph, true));
     printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
   }
 

@@ -206,6 +206,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
       }
       oss << " imbalance=" << metrics::imbalance(hypergraph, context);
     }
+    oss << " positive_cut_edges=" << metrics::positive_cut_edges(hypergraph, true);
     oss << " negative_cut_edges=" << metrics::negative_cut_edges(hypergraph, true);
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 

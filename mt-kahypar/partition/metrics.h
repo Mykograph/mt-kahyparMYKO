@@ -69,6 +69,18 @@ HyperedgeID negative_cut_edges( const PartitionedHypergraph& hg,
 }
 
 template<typename PartitionedHypergraph>
+HyperedgeID positive_cut_edges( const PartitionedHypergraph& hg,
+                                const bool parallel = true) {
+  tbb::enumerable_thread_specific<HyperedgeID> num_positive_cut_edges(0);
+  hg.doParallelForAllEdges([&](const HyperedgeID he) {
+    if (hg.edgeWeight(he) > 0 && hg.connectivity(he) > 1) {
+      num_positive_cut_edges.local()++;
+    }
+  });
+  return num_positive_cut_edges.combine(std::plus<>());
+}
+
+template<typename PartitionedHypergraph>
 bool isBalanced(const PartitionedHypergraph& phg, const Context& context);
 
 template<typename PartitionedHypergraph>
