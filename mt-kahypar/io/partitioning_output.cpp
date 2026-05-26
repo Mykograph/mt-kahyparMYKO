@@ -472,7 +472,12 @@ namespace mt_kahypar::io {
     printKeyValue("Partitioning Time", std::to_string(elapsed_seconds.count()) + " s");
     printKeyValue("Positive Cut Edges", metrics::positive_cut_edges(hypergraph, true));
     printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
+    printKeyValue("Coarsened Nodes", context.coarsened_num_nodes);
+    printKeyValue("Coarsened Edges", context.coarsened_num_edges);
   }
+  //Will this output work, or do i have to change something else to get key values for the coarsened hypergraph node amount and edge amount?
+  // I think i have to change the printPartitioningResults function to also take the coarsened hypergraph as an argument, and then call this printObjectives function from there, right?
+  // Yes, that is correct. You would need to modify the printPartitioningResults function to take the coarsened hypergraph as an additional argument, and then call printObjectives with the
 
   using MCell = parallel::IntegralAtomicWrapper<HyperedgeWeight>;
   using MCol = std::vector<MCell>;

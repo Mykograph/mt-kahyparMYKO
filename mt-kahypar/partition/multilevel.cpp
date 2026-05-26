@@ -99,11 +99,19 @@ namespace {
       coarsener->coarsen();
 
       if (context.partition.enable_logging) {
-        mt_kahypar_hypergraph_t coarsestHypergraph = coarsener->coarsestHypergraph();
-        mt_kahypar::io::printHypergraphInfo(
-          utils::cast<Hypergraph>(coarsestHypergraph), context,
-          "Coarsened Hypergraph", context.partition.show_memory_consumption);
-      }
+  mt_kahypar_hypergraph_t coarsestHypergraph = coarsener->coarsestHypergraph();
+  const Hypergraph& coarsest = utils::cast<Hypergraph>(coarsestHypergraph);
+
+  // Capture coarsened sizes
+  const_cast<Context&>(context).coarsened_num_nodes = coarsest.initialNumNodes();
+  const_cast<Context&>(context).coarsened_num_edges = Hypergraph::is_graph
+    ? coarsest.initialNumEdges() / 2
+    : coarsest.initialNumEdges();
+
+  mt_kahypar::io::printHypergraphInfo(
+    coarsest, context, "Coarsened Hypergraph",
+    context.partition.show_memory_consumption);
+}
     }
     timer.stop_timer("coarsening");
 

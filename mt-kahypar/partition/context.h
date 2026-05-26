@@ -280,6 +280,9 @@ class Context {
   mutable size_t initial_km1 = std::numeric_limits<size_t>::max();
   size_t utility_id = std::numeric_limits<size_t>::max();
 
+  HypernodeID coarsened_num_nodes = 0;
+  HyperedgeID coarsened_num_edges = 0;
+
   Context(const bool register_utilities = true);
 
   bool isNLevelPartitioning() const;
