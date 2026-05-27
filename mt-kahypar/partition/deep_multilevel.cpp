@@ -731,6 +731,10 @@ PartitionID deep_multilevel_partitioning(typename TypeTraits::PartitionedHypergr
   timer.start_timer("initial_partitioning", "Initial Partitioning");
   const bool was_enabled_before = disableTimerAndStats(context);
   PartitionedHypergraph& coarsest_phg = uncoarseningData.coarsestPartitionedHypergraph();
+  const_cast<Context&>(c).coarsened_num_nodes = coarsest_phg.initialNumNodes();
+  const_cast<Context&>(c).coarsened_num_edges = Hypergraph::is_graph
+    ? coarsest_phg.initialNumEdges() / 2
+    : coarsest_phg.initialNumEdges();
   PartitionID current_k = kInvalidPartition;
   if ( no_further_contractions_possible ) {
     DBG << "Smallest Hypergraph"
