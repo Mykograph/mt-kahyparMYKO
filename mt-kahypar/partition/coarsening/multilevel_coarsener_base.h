@@ -51,7 +51,10 @@ class MultilevelCoarsenerBase {
           _hg(hypergraph),
           _context(context),
           _timer(utils::Utilities::instance().getTimer(context.utility_id)),
-          _uncoarseningData(uncoarseningData) {}
+          _uncoarseningData(uncoarseningData),
+          _hhg(hypergraph.copy()) {   
+          heuristicHypergraph();     
+}
 
   MultilevelCoarsenerBase(const MultilevelCoarsenerBase&) = delete;
   MultilevelCoarsenerBase(MultilevelCoarsenerBase&&) = delete;
@@ -72,9 +75,31 @@ class MultilevelCoarsenerBase {
 
   Hypergraph& currentHypergraph() {
     if ( _uncoarseningData.hierarchy.empty() ) {
-      return _hg;
+      return _hhg;
     } else {
       return _uncoarseningData.hierarchy.back().contractedHypergraph();
+    }
+  }
+
+  void heuristicHypergraph() {
+    // modify every negative edge, set it to:
+    //nodes in edge * the weight of their incident edges (except the negative one) 
+    for (const HyperedgeID he : _hhg.edges()) {
+      if (_hg.edgeWeight(he) < 0) {
+        HyperedgeWeight new_weight = 0;
+        for (const HypernodeID pin : _hhg.pins(he)) {
+          HyperedgeWeight accumulator = 0;
+          for (const HyperedgeID incident_he : _hhg.incidentEdges(pin)) {
+            if (incident_he != he) {
+              accumulator+= _hg.edgeWeight(incident_he);
+            }
+          }
+          if (accumulator > new_weight) {
+            new_weight = accumulator;
+          }
+        }
+        _hhg.setEdgeWeight(he, new_weight);
+      }
     }
   }
 
@@ -85,6 +110,7 @@ class MultilevelCoarsenerBase {
 
  protected:
   Hypergraph& _hg;
+  Hypergraph _hhg;
   const Context& _context;
   utils::Timer& _timer;
   UncoarseningData<TypeTraits>& _uncoarseningData;
