@@ -98,7 +98,7 @@ class MultilevelCoarsenerBase {
             new_weight = accumulator;
           }
         }
-        _hhg.setEdgeWeight(he, new_weight);
+        _hhg.setEdgeWeight(he, -new_weight);
       }
     }
   }
