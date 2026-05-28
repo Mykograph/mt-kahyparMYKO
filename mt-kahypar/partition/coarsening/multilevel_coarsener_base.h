@@ -86,6 +86,7 @@ class MultilevelCoarsenerBase {
     //nodes in edge * the weight of their incident edges (except the negative one) 
     for (const HyperedgeID he : _hhg.edges()) {
       if (_hg.edgeWeight(he) < 0) {
+        LOG<<he<<" is a negative edge, modifying weight for heuristic coarsening";
         HyperedgeWeight new_weight = 0;
         for (const HypernodeID pin : _hhg.pins(he)) {
           HyperedgeWeight accumulator = 0;

@@ -13,6 +13,7 @@ clang-debug/*
 build/*
 build2/*
 build-two-hop/*
+build-h/*
 build_debug/*
 build_release/*
 build_clang/*
