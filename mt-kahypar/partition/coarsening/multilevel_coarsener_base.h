@@ -53,7 +53,8 @@ class MultilevelCoarsenerBase {
           _timer(utils::Utilities::instance().getTimer(context.utility_id)),
           _uncoarseningData(uncoarseningData),
           _hhg(hypergraph.copy()) {   
-          heuristicHypergraph();     
+          heuristicHypergraph(); 
+          _uncoarseningData.setHeuristicHypergraph(_hhg);    
 }
 
   MultilevelCoarsenerBase(const MultilevelCoarsenerBase&) = delete;
@@ -84,21 +85,24 @@ class MultilevelCoarsenerBase {
   void heuristicHypergraph() {
     // modify every negative edge, set it to:
     //nodes in edge * the weight of their incident edges (except the negative one) 
-    for (const HyperedgeID he : _hhg.edges()) {
+    for (const HyperedgeID he : _hg.edges()) {
       if (_hg.edgeWeight(he) < 0) {
-        LOG<<he<<" is a negative edge, modifying weight for heuristic coarsening";
-        HyperedgeWeight new_weight = 0;
-        for (const HypernodeID pin : _hhg.pins(he)) {
+        //LOG<<he<<" is a negative edge, modifying weight for heuristic coarsening";
+
+        HyperedgeWeight new_weight =  INT32_MAX;
+        for (const HypernodeID pin : _hg.pins(he)) {
           HyperedgeWeight accumulator = 0;
-          for (const HyperedgeID incident_he : _hhg.incidentEdges(pin)) {
+
+          for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
             if (incident_he != he) {
               accumulator+= _hg.edgeWeight(incident_he);
             }
           }
-          if (accumulator > new_weight) {
+          if (accumulator < new_weight) {
             new_weight = accumulator;
           }
         }
+        //LOG<<he<<"set this edge to weight "<<-new_weight<<" for heuristic coarsening";
         _hhg.setEdgeWeight(he, -new_weight);
       }
     }

@@ -122,6 +122,10 @@ public:
     }, tbb::static_partitioner());
   }
 
+  void setHeuristicHypergraph(Hypergraph& hhg) {
+    _hhg = &hhg;
+}
+
   void setPartitionedHypergraph(PartitionedHypergraph&& phg) {
     ASSERT(!is_phg_initialized);
     partitioned_hg = std::make_unique<PartitionedHypergraph>(std::move(phg));
@@ -169,7 +173,9 @@ public:
           parallel::scalable_vector<HypernodeID>&& communities, bool deterministic,
           const HighResClockTimepoint& round_start) {
     ASSERT(!is_finalized);
-    Hypergraph& current_hg = hierarchy.empty() ? _hg : hierarchy.back().contractedHypergraph();
+    Hypergraph& current_hg = hierarchy.empty() 
+          ? (_hhg ? *_hhg : _hg) 
+          : hierarchy.back().contractedHypergraph();
     ASSERT(current_hg.initialNumNodes() == communities.size());
     Hypergraph contracted_hg = current_hg.contract(communities, deterministic);
     const HighResClockTimepoint round_end = std::chrono::high_resolution_clock::now();
@@ -213,6 +219,7 @@ public:
 
 private:
   Hypergraph& _hg;
+  Hypergraph* _hhg = nullptr;
   const Context& _context;
 };
 
