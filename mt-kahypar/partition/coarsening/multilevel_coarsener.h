@@ -143,6 +143,7 @@ class MultilevelCoarsener : public ICoarsener,
   bool coarseningPassImpl() override {
     HighResClockTimepoint round_start = std::chrono::high_resolution_clock::now();
     Hypergraph& current_hg = Base::currentHypergraph();
+    //LOG<<"COARSENINGPASS";
     DBG << V(_pass_nr)
         << V(current_hg.initialNumNodes())
         << V(current_hg.initialNumEdges())

@@ -52,7 +52,10 @@ class MultilevelCoarsenerBase {
           _context(context),
           _timer(utils::Utilities::instance().getTimer(context.utility_id)),
           _uncoarseningData(uncoarseningData),
-          _hhg(hypergraph.copy()) {   
+          _hhg(hypergraph.copy()) {
+            //_hhg.setEdgeWeight(1, 999);
+            //LOG << "_hg.edgeWeight(1): " << _hg.edgeWeight(1);
+            //LOG << "_hhg.edgeWeight(1): " << _hhg.edgeWeight(1);
           heuristicHypergraph(); 
           _uncoarseningData.setHeuristicHypergraph(_hhg);    
 }
@@ -76,8 +79,11 @@ class MultilevelCoarsenerBase {
 
   Hypergraph& currentHypergraph() {
     if ( _uncoarseningData.hierarchy.empty() ) {
+      //LOG << "Returning original hypergraph *************************************************";
+      //LOG << "original num nodes: " << _hg.initialNumNodes();
       return _hhg;
     } else {
+      //LOG << "Returning coarsened hypergraph *************************************************";
       return _uncoarseningData.hierarchy.back().contractedHypergraph();
     }
   }
@@ -90,6 +96,7 @@ class MultilevelCoarsenerBase {
         //LOG<<he<<" is a negative edge, modifying weight for heuristic coarsening";
 
         HyperedgeWeight new_weight =  INT32_MAX;
+        HypernodeID pinNr=0;
         for (const HypernodeID pin : _hg.pins(he)) {
           HyperedgeWeight accumulator = 0;
 
@@ -100,13 +107,21 @@ class MultilevelCoarsenerBase {
           }
           if (accumulator < new_weight) {
             new_weight = accumulator;
+            pinNr = pin;
           }
         }
         //LOG<<he<<"set this edge to weight "<<-new_weight<<" for heuristic coarsening";
         _hhg.setEdgeWeight(he, -new_weight);
       }
     }
+              for (const HyperedgeID he : _hg.edges()) {
+    //if (_hg.edgeWeight(he) != _hhg.edgeWeight(he)) {
+        //LOG << "edge " << he 
+        //    << " _hg=" << _hg.edgeWeight(he) 
+        //    << " _hhg=" << _hhg.edgeWeight(he);
+    //}
   }
+}
 
   PartitionedHypergraph& currentPartitionedHypergraph() {
     ASSERT(_uncoarseningData.is_finalized);
