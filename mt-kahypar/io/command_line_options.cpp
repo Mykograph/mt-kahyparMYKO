@@ -222,6 +222,13 @@ namespace mt_kahypar {
     )->callback_priority(CLI::CallbackPriority::First)->check(CLI::ExistingFile);
     if (preset_option != nullptr) config_option->excludes(preset_option);
     if (detailed) {
+      //Tuning parameter for possible heuristic coarsening tuning
+      app.add_option(
+        "--tuning-parameter",
+        context.tuning_parameter,
+        "Tuning parameter for heuristic coarsening (default: 1.0)"
+      )->check(CLI::Range(0.0, 1.0));
+
       // provide deprecated name for backwards compatibility (-> remove in future version)
       auto option = app.add_option_function<std::string>(
         "-p,--preset", [&](const std::string& file) {

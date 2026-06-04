@@ -89,11 +89,13 @@ class MultilevelCoarsenerBase {
   }
 
   void heuristicHypergraph() {
+    //multiplier supposed to prevent rounding when multiplying with tuning parameter, which is between 0 and 1
+    int multiplier = 10;
     // modify every negative edge, set it to:
     //nodes in edge * the weight of their incident edges (except the negative one) 
     for (const HyperedgeID he : _hg.edges()) {
+      _hhg.setEdgeWeight(he, _hg.edgeWeight(he)*multiplier);
       if (_hg.edgeWeight(he) < 0) {
-        //LOG<<he<<" is a negative edge, modifying weight for heuristic coarsening";
 
         HyperedgeWeight new_weight =  INT32_MAX;
         HypernodeID pinNr=0;
@@ -101,8 +103,8 @@ class MultilevelCoarsenerBase {
           HyperedgeWeight accumulator = 0;
 
           for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
-            if (incident_he != he) {
-              accumulator+= _hg.edgeWeight(incident_he);
+            if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
+              accumulator+= _hg.edgeWeight(incident_he) * multiplier;
             }
           }
           if (accumulator < new_weight) {
@@ -110,17 +112,10 @@ class MultilevelCoarsenerBase {
             pinNr = pin;
           }
         }
-        //LOG<<he<<"set this edge to weight "<<-new_weight<<" for heuristic coarsening";
-        _hhg.setEdgeWeight(he, -new_weight);
+        //Setting negative edge weight times the tuning parameter
+        _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
       }
     }
-              for (const HyperedgeID he : _hg.edges()) {
-    //if (_hg.edgeWeight(he) != _hhg.edgeWeight(he)) {
-        //LOG << "edge " << he 
-        //    << " _hg=" << _hg.edgeWeight(he) 
-        //    << " _hhg=" << _hhg.edgeWeight(he);
-    //}
-  }
 }
 
   PartitionedHypergraph& currentPartitionedHypergraph() {
