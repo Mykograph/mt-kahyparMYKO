@@ -229,6 +229,12 @@ namespace mt_kahypar {
         "Tuning parameter for heuristic coarsening (default: 1.0)"
       )->check(CLI::Range(0.0, 1.0));
 
+      app.add_flag(
+        "--heuristic-edge-size",
+        context.heuristicEdgeSize,
+        "Use heuristic edge sizes for coarsening."
+      );
+
       // provide deprecated name for backwards compatibility (-> remove in future version)
       auto option = app.add_option_function<std::string>(
         "-p,--preset", [&](const std::string& file) {

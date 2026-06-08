@@ -282,7 +282,9 @@ class Context {
 
   HypernodeID coarsened_num_nodes = 0;
   HyperedgeID coarsened_num_edges = 0;
+
   float tuning_parameter = 1.0;
+  bool heuristicEdgeSize = false;
 
   Context(const bool register_utilities = true);
 
