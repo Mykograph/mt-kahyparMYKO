@@ -91,6 +91,7 @@ class MultilevelCoarsenerBase {
   void heuristicHypergraph() {
     //multiplier supposed to prevent rounding when multiplying with tuning parameter, which is between 0 and 1
     int multiplier = 10;
+    int multiplier2 = 100;
     // modify every negative edge, set it to:
     //nodes in edge * the weight of their incident edges (except the negative one) 
     for (const HyperedgeID he : _hg.edges()) {
@@ -105,7 +106,7 @@ class MultilevelCoarsenerBase {
             if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
               float partial_sum= _hg.edgeWeight(incident_he) * 10 ;
               if(_context.heuristicEdgeSize){
-                partial_sum *= (100 / _hg.edgeSize(incident_he));}
+                partial_sum *= (multiplier2 / _hg.edgeSize(incident_he));}
               accumulator += partial_sum;
             }
             
@@ -116,7 +117,9 @@ class MultilevelCoarsenerBase {
           }
         }
         //Setting negative edge weight times the tuning parameter
-        _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
+        if((-new_weight * _context.tuning_parameter) > _hhg.edgeWeight(he)){
+          _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
+        }
       }
     }
 }
