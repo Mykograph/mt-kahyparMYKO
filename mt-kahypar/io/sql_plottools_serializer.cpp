@@ -210,6 +210,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
     oss << " negative_cut_edges=" << metrics::negative_cut_edges(hypergraph, true);
     oss << " coarsened_nodes=" << context.coarsened_num_nodes;   
     oss << " coarsened_edges=" << context.coarsened_num_edges;
+    oss << " num_violated_constraints=" << context.violated_constraints;
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 
     // Timings

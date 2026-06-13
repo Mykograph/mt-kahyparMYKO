@@ -474,6 +474,7 @@ namespace mt_kahypar::io {
     printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
     printKeyValue("Coarsened Nodes", context.coarsened_num_nodes);
     printKeyValue("Coarsened Edges", context.coarsened_num_edges);
+    printKeyValue("Violated Constraints", context.violated_constraints);
   }
   //Will this output work, or do i have to change something else to get key values for the coarsened hypergraph node amount and edge amount?
   // I think i have to change the printPartitioningResults function to also take the coarsened hypergraph as an argument, and then call this printObjectives function from there, right?

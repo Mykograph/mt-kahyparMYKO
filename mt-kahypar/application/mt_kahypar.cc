@@ -27,6 +27,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <fstream>
 
 #include "mt-kahypar/io/command_line_options.h"
 #include "mt-kahypar/io/hypergraph_factory.h"
@@ -50,6 +51,46 @@ using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resoluti
 
 namespace {
 } // namespace
+
+template<typename PartitionedHypergraph>
+int checkHowManyConstraintsAreViolated(const PartitionedHypergraph& partitioned_hypergraph,
+                                        const Context& context) {
+  if (context.partition.constraint_filename.empty()) {
+    return 0;
+  }
+  std::ifstream file(context.partition.constraint_filename);
+  if (!file) {
+    throw InvalidInputException("File not found: " + context.partition.constraint_filename);
+  }
+
+  int num_violated_constraints = 0;
+  int64_t u = 0, v = 0;
+  while (file >> u >> v) {
+    if (partitioned_hypergraph.partID(u) != partitioned_hypergraph.partID(v)) {
+      ++num_violated_constraints;
+    }
+  }
+  return num_violated_constraints;
+}
+
+int checkHowManyConstraintsAreViolated(const mt_kahypar_partitioned_hypergraph_t& partitioned_hypergraph,
+                                        const Context& context) {
+  switch (partitioned_hypergraph.type) {
+    case MULTILEVEL_HYPERGRAPH_PARTITIONING:
+      return checkHowManyConstraintsAreViolated(
+        utils::cast<StaticHypergraphTypeTraits::PartitionedHypergraph>(partitioned_hypergraph), context);
+    case MULTILEVEL_GRAPH_PARTITIONING:
+      return checkHowManyConstraintsAreViolated(
+        utils::cast<StaticGraphTypeTraits::PartitionedHypergraph>(partitioned_hypergraph), context);
+    case N_LEVEL_HYPERGRAPH_PARTITIONING:
+      return checkHowManyConstraintsAreViolated(
+        utils::cast<DynamicHypergraphTypeTraits::PartitionedHypergraph>(partitioned_hypergraph), context);
+    case N_LEVEL_GRAPH_PARTITIONING:
+      return checkHowManyConstraintsAreViolated(
+        utils::cast<DynamicGraphTypeTraits::PartitionedHypergraph>(partitioned_hypergraph), context);
+    default: return 0;
+  }
+}
 
 int main(int argc, char* argv[]) {
 
@@ -161,6 +202,9 @@ int main(int argc, char* argv[]) {
       partitioned_hypergraph, context.partition.graph_partition_filename);
   }
 
+  int num_violated_constraints = checkHowManyConstraintsAreViolated(partitioned_hypergraph, context);
+  context.violated_constraints = num_violated_constraints;
+  
   parallel::MemoryPool::instance().free_memory_chunks();
   parallel::terminate_tbb();
 
