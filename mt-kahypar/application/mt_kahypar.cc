@@ -32,6 +32,7 @@
 #include "mt-kahypar/io/hypergraph_factory.h"
 #include "mt-kahypar/io/partitioning_output.h"
 #include "mt-kahypar/io/presets.h"
+#include "mt-kahypar/definitions.h"
 #include "mt-kahypar/parallel/thread_management.h"
 #include "mt-kahypar/partition/partitioner_facade.h"
 #include "mt-kahypar/partition/registries/register_memory_pool.h"
@@ -46,6 +47,9 @@
 
 using namespace mt_kahypar;
 using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
+
+namespace {
+} // namespace
 
 int main(int argc, char* argv[]) {
 
@@ -102,7 +106,9 @@ int main(int argc, char* argv[]) {
       context.partition.graph_filename, context.partition.preset_type,
       context.partition.instance_type, context.partition.file_format,
       context.preprocessing.stable_construction_of_incident_edges,
-      /*remove_single_pin_hes=*/true, /*print_warnings=*/true);
+      /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
+      context.partition.constraint_filename,
+      context.partition.constraint_weight);
   timer.stop_timer("io_hypergraph");
 
   // Read Target Graph

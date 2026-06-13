@@ -84,10 +84,10 @@ using TypeTraitsList = kahypar::meta::Typelist<StaticHypergraphTypeTraits
                                                ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(COMMA DynamicGraphTypeTraits)
                                                ENABLE_LARGE_K(COMMA LargeKHypergraphTypeTraits)>;
 
-#define INSTANTIATE_FUNC_WITH_HYPERGRAPHS(FUNC)                      \
-  template FUNC(ds::StaticHypergraph);                               \
-  ENABLE_GRAPHS(template FUNC(ds::StaticGraph);)                     \
-  ENABLE_HIGHEST_QUALITY(template FUNC(ds::DynamicHypergraph);)       \
+#define INSTANTIATE_FUNC_WITH_HYPERGRAPHS(FUNC)                                 \
+  template FUNC(ds::StaticHypergraph);                                          \
+  ENABLE_GRAPHS(template FUNC(ds::StaticGraph);)                                \
+  ENABLE_HIGHEST_QUALITY(template FUNC(ds::DynamicHypergraph);)                 \
   ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template FUNC(ds::DynamicGraph);)
 
 #define INSTANTIATE_CLASS_WITH_HYPERGRAPHS(C)                           \

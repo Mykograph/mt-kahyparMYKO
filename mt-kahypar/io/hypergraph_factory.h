@@ -43,14 +43,18 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const FileFormat& format,
                                       const bool stable_construction,
                                       const bool remove_single_pin_hes,
-                                      const bool print_warnings);
+                                      const bool print_warnings,
+                                      const std::string& constraint_filename = "",
+                                      const HyperedgeWeight constraint_weight = -100);
 
 template<typename Hypergraph>
 Hypergraph readInputFile(const std::string& filename,
                          const FileFormat& format,
                          const bool stable_construction,
                          const bool remove_single_pin_hes,
-                         const bool print_warnings);
+                         const bool print_warnings,
+                         const std::string& constraint_filename = "",
+                         const HyperedgeWeight constraint_weight = -100);
 
 void addFixedVertices(mt_kahypar_hypergraph_t hypergraph,
                       const mt_kahypar_partition_id_t* fixed_vertices,

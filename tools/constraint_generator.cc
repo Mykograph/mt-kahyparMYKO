@@ -1,4 +1,4 @@
-#include <boost/program_options.hpp>
+#include <CLI/CLI.hpp>
 
 #include <optional>
 #include <filesystem>
@@ -14,7 +14,6 @@
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 
 using namespace mt_kahypar;
-namespace po = boost::program_options;
 namespace fs = std::filesystem;
 
 const std::string CONSTRAINT_FILE_EXTENSION = ".constraints.txt";
@@ -108,7 +107,7 @@ HypernodeID generate_constraints_from_hg(const fs::path hg_path,
     vec<HypernodeWeight> hypernodes_weight;
 
     io::readHypergraphFile(hg_path.string(), num_edges, num_nodes, num_removed_single_pin_hyperedges,
-                         hyperedges, hyperedges_weight, hypernodes_weight);
+                         hyperedges, hyperedges_weight, hypernodes_weight, false, false);
     ALWAYS_ASSERT(hyperedges.size() == num_edges);
     ALWAYS_ASSERT(num_removed_single_pin_hyperedges == 0);
 
@@ -149,10 +148,15 @@ HypernodeID generate_constraints_from_partitioned_hg(const fs::path hg_path,
                                                         const HypernodeID max_constraints_per_node,
                                                         const HypernodeID desired_node_degree) {
     // Read Hypergraph header and partitioned Hypergraph
-    HyperedgeID num_edges;
-    HypernodeID num_nodes;
+    HyperedgeID num_edges = 0;
+    HypernodeID num_nodes = 0;
+    HyperedgeID num_removed_single_pin_hyperedges_1 = 0;
+    io::HyperedgeVector hyperedges_1;
+    vec<HyperedgeWeight> hyperedges_weight_1;
+    vec<HypernodeWeight> hypernodes_weight_1;
     std::vector<PartitionID> partitions;
-    io::onlyReadHGRHeader(hg_path.string(), num_edges, num_nodes);
+    io::readHypergraphFile(hg_path.string(), num_edges, num_nodes, num_removed_single_pin_hyperedges_1,
+                         hyperedges_1, hyperedges_weight_1, hypernodes_weight_1, false, false);
     io::readPartitionFile(part_hg_path.string(), num_nodes, partitions);
 
     HypernodeID num_constraints = num_nodes * constraints_percentage;
@@ -194,10 +198,15 @@ HypernodeID generate_constraints_from_partitioned_hg_old_way(const fs::path hg_p
                                                         const HypernodeID max_constraints_per_node,
                                                         const HypernodeID desired_node_degree) {
     unused(desired_node_degree);
-    HyperedgeID num_edges;
-    HypernodeID num_nodes;
+    HyperedgeID num_edges = 0;
+    HypernodeID num_nodes = 0;
+    HyperedgeID num_removed_single_pin_hyperedges_2 = 0;
+    io::HyperedgeVector hyperedges_2;
+    vec<HyperedgeWeight> hyperedges_weight_2;
+    vec<HypernodeWeight> hypernodes_weight_2;
     std::vector<PartitionID> partitions;
-    io::onlyReadHGRHeader(hg_path.string(), num_edges, num_nodes);
+    io::readHypergraphFile(hg_path.string(), num_edges, num_nodes, num_removed_single_pin_hyperedges_2,
+                         hyperedges_2, hyperedges_weight_2, hypernodes_weight_2, false, false);
     io::readPartitionFile(part_hg_path.string(), num_nodes, partitions);
 
     HypernodeID num_constraints = num_nodes * constraints_percentage;
@@ -237,35 +246,26 @@ int main(int argc, char* argv[]) {
     bool generate_from_partitioned_hg_old_way;
     HypernodeID max_constraints_per_node;
 
-    po::options_description options("Options");
-    options.add_options()
-        ("hypergraph,h",
-        po::value<fs::path>(&hypergraph_path)->value_name("<path>")->required(),
-        "Hypergraph Filename or directory")
-        ("constraint,c",
-        po::value<fs::path>(&constraint_dir)->value_name("<path>")->required(),
-        "Constraint directory")
-        ("blocks,k",
-        po::value<HypernodeID>(&k)->value_name("<int>")->required(),
-        "Number of blocks")
-        ("degree,d",
-        po::value<HypernodeID>(&desired_node_degree)->value_name("<int>")->default_value(0),
-        "Desired constraint node degree")
-        ("num-constraints,n",
-        po::value<float>(&num_constraints_percentage)->value_name("<float>")->default_value(1.0),
-        "Number of constraints (optional)")
-        ("old",
-        po::bool_switch(&generate_from_partitioned_hg_old_way),
-        "Generate constraints from part hg the old way (optional)")
-        ("part-hypergraph,p",
-        po::value<fs::path>()->notifier([&](const fs::path& path) {
-            partitioned_hypergraph_path = path;
-        })->value_name("<path>"),
-        "Partitioned-Hypergraph Filename or directory (optional)")
-    ;
-    po::variables_map cmd_vm;
-    po::store(po::parse_command_line(argc,argv, options), cmd_vm);
-    po::notify(cmd_vm);
+    std::string hypergraph_path_str;
+    std::string constraint_dir_str;
+    std::string part_hg_path_str;
+
+    CLI::App app{"Constraint Generator"};
+    app.add_option("-g,--hypergraph", hypergraph_path_str, "Hypergraph Filename or directory")->required()->type_name("<path>");
+    app.add_option("-c,--constraint", constraint_dir_str, "Constraint directory")->required()->type_name("<path>");
+    app.add_option("-k,--blocks", k, "Number of blocks")->required()->type_name("<int>");
+    app.add_option("-d,--degree", desired_node_degree, "Desired constraint node degree")->default_val(0)->type_name("<int>");
+    app.add_option("-n,--num-constraints", num_constraints_percentage, "Number of constraints (optional)")->default_val(1.0)->type_name("<float>");
+    app.add_flag("--old", generate_from_partitioned_hg_old_way, "Generate constraints from part hg the old way (optional)");
+    app.add_option("-p,--part-hypergraph", part_hg_path_str, "Partitioned-Hypergraph Filename or directory (optional)")->type_name("<path>");
+
+    CLI11_PARSE(app, argc, argv);
+
+    hypergraph_path = hypergraph_path_str;
+    constraint_dir = constraint_dir_str;
+    if (!part_hg_path_str.empty()) {
+        partitioned_hypergraph_path = fs::path(part_hg_path_str);
+    }
 
     max_constraints_per_node = k - 1;
 
@@ -306,14 +306,14 @@ int main(int argc, char* argv[]) {
                 );
             }
             if(generate_from_partitioned_hg_old_way) {
-                constraint_file.replace_filename(constraint_file.stem().string() + ".restricted_induced_" + to_trimmed_string(num_constraints_percentage) + ".constraints" + constraint_file.extension().string());
+                constraint_file.replace_filename(constraint_file.stem().string() + ".constraints" + constraint_file.extension().string());
                 generated_constraints = generate_constraints_from_partitioned_hg_old_way(hg_file, part_hg_file.value(), constraint_file, num_constraints_percentage, max_constraints_per_node, desired_node_degree);
             } else {
-                constraint_file.replace_filename(constraint_file.stem().string() + ".random_induced_" + to_trimmed_string(num_constraints_percentage) + ".constraints" + constraint_file.extension().string());
+                constraint_file.replace_filename(constraint_file.stem().string() + ".constraints" + constraint_file.extension().string());
                 generated_constraints = generate_constraints_from_partitioned_hg(hg_file, part_hg_file.value(), constraint_file, num_constraints_percentage, max_constraints_per_node, desired_node_degree);
             }
         } else {
-            constraint_file.replace_filename(constraint_file.stem().string() + ".random_" + to_trimmed_string(num_constraints_percentage) + ".constraints" + constraint_file.extension().string());
+            constraint_file.replace_filename(constraint_file.stem().string() + ".constraints" + constraint_file.extension().string());
             generated_constraints = generate_constraints_from_hg(hg_file, constraint_file, num_constraints_percentage, max_constraints_per_node, desired_node_degree);
         }
         LOG << "";

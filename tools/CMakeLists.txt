@@ -29,6 +29,9 @@ target_link_libraries(FixedVertexFileGenerator MtKaHyPar-ToolsMin)
 add_executable(WeightGenerator weight_generator.cc)
 target_link_libraries(WeightGenerator MtKaHyPar-BuildTools )
 
+add_executable(ConstraintGenerator constraint_generator.cc)
+target_link_libraries(ConstraintGenerator MtKaHyPar-BuildTools )
+
 
 
 #################################################################

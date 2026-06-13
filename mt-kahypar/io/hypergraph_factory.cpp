@@ -26,6 +26,9 @@
 
 #include "hypergraph_factory.h"
 
+#include <fstream>
+#include <limits>
+
 #include "mt-kahypar/macros.h"
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/io/hypergraph_io.h"
@@ -137,11 +140,164 @@ mt_kahypar_hypergraph_t constructGraph(const mt_kahypar_hypergraph_type_t& type,
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
 
+struct ConstraintPairHash {
+  size_t operator()(const std::pair<HypernodeID, HypernodeID>& p) const noexcept {
+    return (static_cast<size_t>(p.first) << 32) ^ static_cast<size_t>(p.second);
+  }
+};
+
+template<typename EdgeVector>
+void applyConstraintPairs(const std::string& constraint_filename,
+                          const HyperedgeWeight constraint_weight,
+                          const HypernodeID num_nodes,
+                          HyperedgeID& num_edges,
+                          EdgeVector& edges,
+                          vec<HyperedgeWeight>& edge_weight) {
+  if (constraint_filename.empty()) {
+    return;
+  }
+
+  std::ifstream file(constraint_filename);
+  if (!file) {
+    throw InvalidInputException("File not found: " + constraint_filename);
+  }
+
+  vec<std::pair<HypernodeID, HypernodeID>> constraints;
+  int64_t u = 0;
+  int64_t v = 0;
+  while (file >> u >> v) {
+    if (u < 0 || v < 0) {
+      throw InvalidInputException("Constraint file contains a negative node id: " + constraint_filename);
+    }
+    if (u >= num_nodes || v >= num_nodes) {
+      throw InvalidInputException("Constraint file contains an invalid node id: " + constraint_filename);
+    }
+    if (u == v) {
+      throw InvalidInputException("Constraint file contains a self-constraint for node " + std::to_string(u));
+    }
+    HypernodeID hu = static_cast<HypernodeID>(u);
+    HypernodeID hv = static_cast<HypernodeID>(v);
+    if (hu > hv) {
+      std::swap(hu, hv);
+    }
+    constraints.emplace_back(hu, hv);
+  }
+
+  if (constraints.empty()) {
+    return;
+  }
+
+  std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
+  edge_map.reserve(edges.size());
+
+  for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edges.size()); ++he) {
+    const auto& edge = edges[he];
+    if (edge.size() != 2) {
+      continue;
+    }
+    HypernodeID u = edge[0];
+    HypernodeID v = edge[1];
+    if (u > v) {
+      std::swap(u, v);
+    }
+    edge_map[{u, v}].push_back(he);
+  }
+
+  for (const auto& constraint : constraints) {
+    auto it = edge_map.find(constraint);
+    if (it != edge_map.end()) {
+      for (const HyperedgeID he : it->second) {
+        edge_weight[he] = constraint_weight;
+      }
+    } else {
+      edges.emplace_back();
+      auto& new_edge = edges.back();
+      new_edge.reserve(2);
+      new_edge.push_back(constraint.first);
+      new_edge.push_back(constraint.second);
+      edge_weight.push_back(constraint_weight);
+      const HyperedgeID new_he = static_cast<HyperedgeID>(edges.size() - 1);
+      edge_map[constraint].push_back(new_he);
+      ++num_edges;
+    }
+  }
+}
+
+void applyConstraintPairs(const std::string& constraint_filename,
+                          const HyperedgeWeight constraint_weight,
+                          const HypernodeID num_nodes,
+                          HyperedgeID& num_edges,
+                          EdgeVector& edges,
+                          vec<HyperedgeWeight>& edge_weight) {
+  if (constraint_filename.empty()) {
+    return;
+  }
+
+  std::ifstream file(constraint_filename);
+  if (!file) {
+    throw InvalidInputException("File not found: " + constraint_filename);
+  }
+
+  vec<std::pair<HypernodeID, HypernodeID>> constraints;
+  int64_t u = 0;
+  int64_t v = 0;
+  while (file >> u >> v) {
+    if (u < 0 || v < 0) {
+      throw InvalidInputException("Constraint file contains a negative node id: " + constraint_filename);
+    }
+    if (u >= num_nodes || v >= num_nodes) {
+      throw InvalidInputException("Constraint file contains an invalid node id: " + constraint_filename);
+    }
+    if (u == v) {
+      throw InvalidInputException("Constraint file contains a self-constraint for node " + std::to_string(u));
+    }
+    HypernodeID hu = static_cast<HypernodeID>(u);
+    HypernodeID hv = static_cast<HypernodeID>(v);
+    if (hu > hv) {
+      std::swap(hu, hv);
+    }
+    constraints.emplace_back(hu, hv);
+  }
+
+  if (constraints.empty()) {
+    return;
+  }
+
+  std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
+  edge_map.reserve(edges.size());
+
+  for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edges.size()); ++he) {
+    HypernodeID u = edges[he].first;
+    HypernodeID v = edges[he].second;
+    if (u > v) {
+      std::swap(u, v);
+    }
+    edge_map[{u, v}].push_back(he);
+  }
+
+  for (const auto& constraint : constraints) {
+    auto it = edge_map.find(constraint);
+    if (it != edge_map.end()) {
+      for (const HyperedgeID he : it->second) {
+        edge_weight[he] = constraint_weight;
+      }
+    } else {
+      edges.emplace_back(constraint.first, constraint.second);
+      edge_weight.push_back(constraint_weight);
+      const HyperedgeID new_he = static_cast<HyperedgeID>(edges.size() - 1);
+      edge_map[constraint].push_back(new_he);
+      ++num_edges;
+    }
+  }
+}
+
 mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                                        const mt_kahypar_hypergraph_type_t& type,
                                        const bool stable_construction,
                                        const bool remove_single_pin_hes,
-                                       const bool print_warnings) {
+                                       const bool print_warnings,
+                                       const std::string& constraint_filename,
+                                       const HyperedgeWeight constraint_weight) {
   HyperedgeID num_hyperedges = 0;
   HypernodeID num_hypernodes = 0;
   HyperedgeID num_removed_single_pin_hyperedges = 0;
@@ -151,6 +307,7 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
   readHypergraphFile(filename, num_hyperedges, num_hypernodes,
                      num_removed_single_pin_hyperedges, hyperedges,
                      hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
+  applyConstraintPairs(constraint_filename, constraint_weight, num_hypernodes, num_hyperedges, hyperedges, hyperedges_weight);
   return constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
                              hyperedges_weight, hypernodes_weight,
                              num_removed_single_pin_hyperedges, stable_construction);
@@ -159,7 +316,9 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
 mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
                                       const mt_kahypar_hypergraph_type_t& type,
                                       const bool stable_construction,
-                                      const bool) {
+                                      const bool,
+                                      const std::string& constraint_filename,
+                                      const HyperedgeWeight constraint_weight) {
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
   vec<HyperedgeWeight> edges_weight;
@@ -167,11 +326,13 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
   if (type == STATIC_GRAPH || type == DYNAMIC_GRAPH) {
     EdgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices, num_edges, edges, edges_weight);
     return constructGraph(type, num_vertices, num_edges, edges,
                           edges_weight, nodes_weight, stable_construction);
   } else {
     HyperedgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices, num_edges, edges, edges_weight);
     return constructHypergraph(type, num_vertices, num_edges, edges,
                                edges_weight, nodes_weight, 0, stable_construction);
   }
@@ -185,13 +346,15 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const FileFormat& format,
                                       const bool stable_construction,
                                       const bool remove_single_pin_hes,
-                                      const bool print_warnings) {
+                                      const bool print_warnings,
+                                      const std::string& constraint_filename,
+                                      const HyperedgeWeight constraint_weight) {
   mt_kahypar_hypergraph_type_t type = to_hypergraph_c_type(preset, instance);
   switch ( format ) {
     case FileFormat::hMetis: return readHMetisFile(
-      filename, type, stable_construction, remove_single_pin_hes, print_warnings);
+      filename, type, stable_construction, remove_single_pin_hes, print_warnings, constraint_filename, constraint_weight);
     case FileFormat::Metis: return readMetisFile(
-      filename, type, stable_construction, print_warnings);
+      filename, type, stable_construction, print_warnings, constraint_filename, constraint_weight);
   }
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
@@ -201,14 +364,16 @@ Hypergraph readInputFile(const std::string& filename,
                          const FileFormat& format,
                          const bool stable_construction,
                          const bool remove_single_pin_hes,
-                         const bool print_warnings) {
+                         const bool print_warnings,
+                         const std::string& constraint_filename,
+                         const HyperedgeWeight constraint_weight) {
   mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
   switch ( format ) {
     case FileFormat::hMetis: hypergraph = readHMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings);
+      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings, constraint_filename, constraint_weight);
       break;
     case FileFormat::Metis: hypergraph = readMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, print_warnings);
+      filename, Hypergraph::TYPE, stable_construction, print_warnings, constraint_filename, constraint_weight);
   }
   return std::move(utils::cast<Hypergraph>(hypergraph));
 }
@@ -300,22 +465,46 @@ void removeFixedVertices(mt_kahypar_hypergraph_t hypergraph) {
   }
 }
 
-namespace {
-  #define READ_INPUT_FILE(X) X readInputFile(const std::string& filename,       \
-                                             const FileFormat& format,          \
-                                             const bool stable_construction,    \
-                                             const bool remove_single_pin_hes,  \
-                                             const bool logging)
-}
+template ds::StaticHypergraph readInputFile(const std::string& filename,
+                                            const FileFormat& format,
+                                            const bool stable_construction,
+                                            const bool remove_single_pin_hes,
+                                            const bool logging,
+                                            const std::string& constraint_filename,
+                                            const HyperedgeWeight constraint_weight);
 
-INSTANTIATE_FUNC_WITH_HYPERGRAPHS(READ_INPUT_FILE)
+ENABLE_GRAPHS(template ds::StaticGraph readInputFile(const std::string& filename,
+                                                     const FileFormat& format,
+                                                     const bool stable_construction,
+                                                     const bool remove_single_pin_hes,
+                                                     const bool logging,
+                                                     const std::string& constraint_filename,
+                                                     const HyperedgeWeight constraint_weight);)
+
+ENABLE_HIGHEST_QUALITY(template ds::DynamicHypergraph readInputFile(const std::string& filename,
+                                                                    const FileFormat& format,
+                                                                    const bool stable_construction,
+                                                                    const bool remove_single_pin_hes,
+                                                                    const bool logging,
+                                                                    const std::string& constraint_filename,
+                                                                    const HyperedgeWeight constraint_weight);)
+
+ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template ds::DynamicGraph readInputFile(const std::string& filename,
+                                                                          const FileFormat& format,
+                                                                          const bool stable_construction,
+                                                                          const bool remove_single_pin_hes,
+                                                                          const bool logging,
+                                                                          const std::string& constraint_filename,
+                                                                          const HyperedgeWeight constraint_weight);)
 
 #ifndef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
 template ds::StaticGraph readInputFile(const std::string& filename,
                                        const FileFormat& format,
                                        const bool stable_construction,
                                        const bool remove_single_pin_hes,
-                                       const bool logging);
+                                       const bool logging,
+                                       const std::string& constraint_filename,
+                                       const HyperedgeWeight constraint_weight);
 #endif
 
 }  // namespace io
