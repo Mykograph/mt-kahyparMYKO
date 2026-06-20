@@ -51,11 +51,11 @@
 namespace mt_kahypar::io {
   namespace internal {
     struct Statistic {
-      uint64_t min = 0;
+      int min = 0;
       uint64_t q1 = 0;
       uint64_t med = 0;
       uint64_t q3 = 0;
-      uint64_t max = 0;
+      int max = 0;
       double avg = 0.0;
       double sd = 0.0;
     };
