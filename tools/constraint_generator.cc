@@ -94,10 +94,10 @@ bool try_add_constraint(HypernodeID a,
 }
 
 HypernodeID generate_constraints_from_hg(const fs::path hg_path,
-                                        const fs::path constraints_path,
-                                        const float constraints_percentage,
-                                        const HypernodeID max_constraints_per_node,
-                                        const HypernodeID desired_node_degree) {
+                                         const fs::path constraints_path,
+                                         const float constraints_percentage,
+                                         const HypernodeID max_constraints_per_node,
+                                         const HypernodeID desired_node_degree) {
     // Read Hypergraph
     HyperedgeID num_edges;
     HypernodeID num_nodes;
@@ -107,7 +107,7 @@ HypernodeID generate_constraints_from_hg(const fs::path hg_path,
     vec<HypernodeWeight> hypernodes_weight;
 
     io::readHypergraphFile(hg_path.string(), num_edges, num_nodes, num_removed_single_pin_hyperedges,
-                         hyperedges, hyperedges_weight, hypernodes_weight, false, false);
+                           hyperedges, hyperedges_weight, hypernodes_weight, false, false);
     ALWAYS_ASSERT(hyperedges.size() == num_edges);
     ALWAYS_ASSERT(num_removed_single_pin_hyperedges == 0);
 
@@ -116,14 +116,39 @@ HypernodeID generate_constraints_from_hg(const fs::path hg_path,
     std::unordered_map<HypernodeID, HypernodeID> constraints_count_per_node;
     std::unordered_map<HypernodeID, std::unordered_set<HypernodeID>> constraints_per_node;
 
+    // Global safety limit to break out when graph saturation prevents adding more constraints
+    size_t total_attempts = 0;
+    const size_t max_global_attempts = static_cast<size_t>(num_nodes) * 50;
+
     std::ofstream out_stream(constraints_path);
-    while(constraint_count < num_constraints) {
+    while (constraint_count < num_constraints) {
+        total_attempts++;
+        if (total_attempts > max_global_attempts) {
+            std::cout << "[Warning] Graph capacity constraint reached. Stopped at " 
+                      << constraint_count << " / " << num_constraints 
+                      << " constraints to prevent infinite loop." << std::endl;
+            break;
+        }
+
         HypernodeID node = pick_random(num_nodes - 1);
-        HypernodeID node_constraints = ((desired_node_degree == 0)? pick_random(max_constraints_per_node) : desired_node_degree);
+        HypernodeID node_constraints = ((desired_node_degree == 0) ? pick_random(max_constraints_per_node) : desired_node_degree);
         HypernodeID count_node_constraints = 0;
+        
+        // Inner loop safety limit to prevent spinning looking for a matching target node
+        size_t inner_attempts = 0;
+        const size_t max_inner_attempts = num_nodes * 2;
+
         while (count_node_constraints < node_constraints && constraint_count < num_constraints) {
+            inner_attempts++;
+            if (inner_attempts > max_inner_attempts) {
+                break; // Give up on this primary node, select a new one
+            }
+
             HypernodeID other_node = pick_random(num_nodes - 1);
-            if (constraints_count_per_node[node] >= max_constraints_per_node) break;
+            if (constraints_count_per_node[node] >= max_constraints_per_node) {
+                break;
+            }
+            
             if (try_add_constraint(
                 node,
                 other_node,
@@ -133,7 +158,7 @@ HypernodeID generate_constraints_from_hg(const fs::path hg_path,
             )) {
                 count_node_constraints++;
                 constraint_count++;
-                out_stream << node << " " << other_node << std::endl;
+                out_stream << node << " " << other_node << "\n";
             }
         }
     }
