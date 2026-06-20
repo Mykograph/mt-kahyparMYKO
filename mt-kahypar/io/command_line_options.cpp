@@ -39,6 +39,7 @@
 #include <sys/ioctl.h>
 #endif
 
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -257,11 +258,19 @@ namespace mt_kahypar {
       context.partition.fixed_vertex_filename,
       "Fixed vertex file: allows to pre-assign vertices to a block."
     )->check(CLI::ExistingFile);
-    app.add_option(
+    auto constraint_file_option = app.add_option(
       "--constraint-file",
       context.partition.constraint_filename,
       "Constraint file containing node pairs that should remain in the same block."
     )->check(CLI::ExistingFile);
+    auto constraint_folder_option = app.add_option(
+      "--constraint-folder",
+      context.partition.constraint_folder,
+      "Folder containing constraint files. The file whose name starts with the\n"
+      "hypergraph basename is selected automatically."
+    )->check(CLI::ExistingPath);
+    constraint_file_option->excludes(constraint_folder_option);
+    constraint_folder_option->excludes(constraint_file_option);
     app.add_option(
       "--constraint-weight",
       context.partition.constraint_weight,
@@ -1228,6 +1237,29 @@ namespace mt_kahypar {
             + ".seed"
             + std::to_string(context.partition.seed)
             + ".KaHyPar";
+
+    if (!context.partition.constraint_folder.empty()) {
+      std::string graph_base_name = context.partition.graph_filename.substr(
+              context.partition.graph_filename.find_last_of("/\\") + 1);
+      std::string found;
+      for (const auto& entry : std::filesystem::directory_iterator(context.partition.constraint_folder)) {
+        if (!entry.is_regular_file()) continue;
+        std::string fname = entry.path().filename().string();
+        if (fname.rfind(graph_base_name, 0) == 0) {
+          if (!found.empty()) {
+            ERR("Ambiguous constraint folder: multiple files match hypergraph name '"
+                + graph_base_name + "' in " + context.partition.constraint_folder);
+          }
+          found = entry.path().string();
+        }
+      }
+      if (found.empty()) {
+        ERR("No constraint file matching hypergraph name '"
+            + graph_base_name + "' found in " + context.partition.constraint_folder);
+      }
+      context.partition.constraint_filename = found;
+    }
+
     context.partition.graph_community_filename =
             context.partition.graph_filename + ".community";
   }
