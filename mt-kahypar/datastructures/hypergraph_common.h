@@ -55,7 +55,7 @@ using HyperedgeID = uint32_t;
 using NodeID = uint32_t;
 #endif
 using HypernodeWeight = int32_t;
-using HyperedgeWeight = int32_t;
+using HyperedgeWeight = int64_t;
 using PartitionID = int32_t;
 using Gain = HyperedgeWeight;
 
