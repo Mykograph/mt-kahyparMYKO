@@ -56,20 +56,39 @@ template<typename PartitionedHypergraph>
 int checkHowManyConstraintsAreViolated(const PartitionedHypergraph& partitioned_hypergraph,
                                         const Context& context) {
   if (context.partition.constraint_filename.empty()) {
+    std::cout << "No constraint file specified" << std::endl;
     return 0;
   }
+  
   std::ifstream file(context.partition.constraint_filename);
   if (!file) {
-    throw InvalidInputException("File not found: " + context.partition.constraint_filename);
+    std::cerr << "ERROR: File not found: " << context.partition.constraint_filename << std::endl;
+    return 0;
   }
 
   int num_violated_constraints = 0;
+  int total_constraints = 0;
   int64_t u = 0, v = 0;
+  
+  std::cout << "Checking constraints from: " << context.partition.constraint_filename << std::endl;
+  std::cout << "First 10 constraints:" << std::endl;
+  
+  int count = 0;
   while (file >> u >> v) {
-    if (partitioned_hypergraph.partID(u) != partitioned_hypergraph.partID(v)) {
-      ++num_violated_constraints;
-    }
+    total_constraints++;
+      if (partitioned_hypergraph.partID(u) == partitioned_hypergraph.partID(v)) {
+        num_violated_constraints++;
+      }
+    
   }
+  
+  std::cout << "Total constraints checked: " << total_constraints << std::endl;
+  std::cout << "Violated constraints: " << num_violated_constraints << std::endl;
+  
+  if (total_constraints == 0) {
+    std::cout << "WARNING: No constraints were read from the file!" << std::endl;
+  }
+  
   return num_violated_constraints;
 }
 
@@ -96,6 +115,9 @@ int main(int argc, char* argv[]) {
 
   Context context(false);
   processCommandLineInput(context, argc, argv);
+  // In main.cpp, after processCommandLineInput:
+std::cout << "Constraint filename: '" << context.partition.constraint_filename << "'" << std::endl;
+std::cout << "Constraint weight: " << context.partition.constraint_weight << std::endl;
 
   if ( context.partition.preset_type == PresetType::UNDEFINED ) {
     ERR("No preset specified (--preset-type)");
@@ -184,6 +206,9 @@ int main(int argc, char* argv[]) {
 
   // Print Stats
   std::chrono::duration<double> elapsed_seconds(end - start);
+int num_violated_constraints = checkHowManyConstraintsAreViolated(partitioned_hypergraph, context);
+  context.violated_constraints = num_violated_constraints;
+
   PartitionerFacade::printPartitioningResults(
     partitioned_hypergraph, context, elapsed_seconds);
 
@@ -202,8 +227,6 @@ int main(int argc, char* argv[]) {
       partitioned_hypergraph, context.partition.graph_partition_filename);
   }
 
-  int num_violated_constraints = checkHowManyConstraintsAreViolated(partitioned_hypergraph, context);
-  context.violated_constraints = num_violated_constraints;
   
   parallel::MemoryPool::instance().free_memory_chunks();
   parallel::terminate_tbb();

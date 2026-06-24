@@ -1251,7 +1251,7 @@ namespace mt_kahypar {
                 + graph_base_name + "' in " + context.partition.constraint_folder);
           }
           found = entry.path().string();
-          context.partition.constraint_filename = found;
+          //context.partition.constraint_filename = found;
         }
       }
       if (found.empty()) {
