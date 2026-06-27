@@ -26,6 +26,7 @@
  ******************************************************************************/
 
 #include "partitioner.h"
+#include "mt-kahypar/partition/constraints.h"
 
 #include <tbb/parallel_sort.h>
 #include <tbb/parallel_reduce.h>
@@ -285,11 +286,6 @@ namespace mt_kahypar {
   void forceFixedVertexAssignment(PartitionedHypergraph& partitioned_hg,
                                   const Context& context) {
     if ( partitioned_hg.hasFixedVertices() ) {
-      // This is a sanity check verifying that all fixed vertices are assigned
-      // to their corresponding blocks. If one fixed vertex is assigned to a different
-      // block, we move it to its fixed vertex block. Note that a wrong fixed vertex
-      // block assignment will fail in debug mode. Thus, this loop should not move any node, but
-      // we keep it in case anything goes wrong during partitioning.
       partitioned_hg.doParallelForAllNodes([&](const HypernodeID& hn) {
         if ( partitioned_hg.isFixed(hn) ) {
           const PartitionID from = partitioned_hg.partID(hn);
@@ -370,6 +366,14 @@ namespace mt_kahypar {
     large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hypergraph);
     degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hypergraph);
     forceFixedVertexAssignment(partitioned_hypergraph, context);
+
+    // FIX 5: Guard on the constraint filename being set rather than calling
+    // the non-existent hasNegativeConstraints() method on the hypergraph.
+    // An empty filename means no negative constraints were provided.
+    if (!context.partition.constraint_filename.empty()) {
+      constraints::postprocessNegativeConstraints(partitioned_hypergraph, context);
+    }
+
     timer.stop_timer("postprocessing");
 
     #ifdef KAHYPAR_ENABLE_STEINER_TREE_METRIC
@@ -432,6 +436,12 @@ namespace mt_kahypar {
     large_he_remover.restoreSinglePinAndLargeHyperedges(partitioned_hg);
     degree_zero_hn_remover.restoreDegreeZeroHypernodes(partitioned_hg);
     forceFixedVertexAssignment(partitioned_hg, context);
+
+    // FIX 5 (cont.): same guard applied consistently in the V-cycle path.
+    if (!context.partition.constraint_filename.empty()) {
+      constraints::postprocessNegativeConstraints(partitioned_hg, context);
+    }
+
     timer.stop_timer("postprocessing");
 
     if (context.partition.enable_logging && context.partition.verbose_logging) {

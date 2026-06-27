@@ -53,12 +53,12 @@ class IteratorRange {
     return __begin == __end;
   }
 
-  size_t size() const {
-    return static_cast<size_t>(std::distance(__begin, __end));
+ size_t size() const {
+    return __end - __begin;
   }
 
-  typename std::iterator_traits<IteratorT>::value_type operator[](size_t n) const {
-    return *std::next(__begin, n);
+  reference operator[](size_t n) const {
+    return __begin[n];
   }
 
 private:

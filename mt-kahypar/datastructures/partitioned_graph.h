@@ -869,6 +869,16 @@ private:
     return _hg->fixedVertexBlock(hn);
   }
 
+  // non-const — needed for setNegativeConstraints in hypergraph_factory
+FixedVertexSupport<Hypergraph>& fixedVertexSupport() {
+  return _hg->fixedVertexSupport();
+}
+
+// const — needed for read-only access in constraints.h
+const FixedVertexSupport<Hypergraph>& fixedVertexSupport() const {
+  return _hg->fixedVertexSupport();
+}
+
   // ####################### Memory Consumption #######################
 
   void memoryConsumption(utils::MemoryTreeNode* parent) const {

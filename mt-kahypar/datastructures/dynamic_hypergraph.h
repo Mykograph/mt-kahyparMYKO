@@ -755,9 +755,15 @@ class DynamicHypergraph {
     return _fixed_vertices;
   }
 
+  //const add
+
   FixedVertexSupport<DynamicHypergraph> copyOfFixedVertexSupport() const {
     return _fixed_vertices.copy();
   }
+
+  FixedVertexSupport<DynamicHypergraph>& fixedVertexSupport() {
+  return _fixed_vertices;
+}
 
   // ####################### Contract / Uncontract #######################
 

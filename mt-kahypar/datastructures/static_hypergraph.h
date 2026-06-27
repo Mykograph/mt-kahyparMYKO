@@ -717,6 +717,10 @@ class StaticHypergraph {
     return _fixed_vertices.copy();
   }
 
+  FixedVertexSupport<StaticHypergraph>& fixedVertexSupport() {
+  return _fixed_vertices;
+}
+
   // ####################### Contract / Uncontract #######################
 
   /*!

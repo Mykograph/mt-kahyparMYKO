@@ -657,13 +657,17 @@ class DynamicGraph {
     _fixed_vertices.setMaxBlockWeight(max_block_weights);
   }
 
-  const FixedVertexSupport<DynamicGraph>& fixedVertexSupport() const {
-    return _fixed_vertices;
-  }
-
   FixedVertexSupport<DynamicGraph> copyOfFixedVertexSupport() const {
     return _fixed_vertices.copy();
   }
+
+  FixedVertexSupport<DynamicGraph>& fixedVertexSupport() {
+  return _fixed_vertices;
+}
+
+const FixedVertexSupport<DynamicGraph>& fixedVertexSupport() const {
+  return _fixed_vertices;
+}
 
   // ####################### Contract / Uncontract #######################
 

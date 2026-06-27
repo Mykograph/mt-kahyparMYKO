@@ -27,6 +27,8 @@
 #pragma once
 
 #include <atomic>
+#include <memory>
+#include <unordered_map>
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/parallel/stl/scalable_vector.h"
@@ -34,6 +36,9 @@
 
 namespace mt_kahypar {
 namespace ds {
+
+// Forward declaration to avoid circular include with dynamic_graph.h
+class DynamicGraph;
 
 template<class Hypergraph>
 class FixedVertexSupport {
@@ -59,7 +64,9 @@ class FixedVertexSupport {
     _total_fixed_vertex_weight(0),
     _fixed_vertex_block_weights(),
     _max_block_weights(),
-    _fixed_vertex_data() { }
+    _fixed_vertex_data(),
+    _constraint_graph(nullptr),
+    _hg_id_to_constraint_id() { }
 
   FixedVertexSupport(const HypernodeID num_nodes,
                      const PartitionID k) :
@@ -67,15 +74,19 @@ class FixedVertexSupport {
     _k(k),
     _hg(nullptr),
     _total_fixed_vertex_weight(0),
-    _fixed_vertex_block_weights(k, CAtomic<HypernodeWeight>(0) ),
+    _fixed_vertex_block_weights(k, CAtomic<HypernodeWeight>(0)),
     _max_block_weights(k, std::numeric_limits<HypernodeWeight>::max()),
-    _fixed_vertex_data(num_nodes, FixedVertexData { kInvalidPartition, 0, 0, SpinLock() }) { }
+    _fixed_vertex_data(num_nodes, FixedVertexData { kInvalidPartition, 0, 0, SpinLock() }),
+    _constraint_graph(nullptr),
+    _hg_id_to_constraint_id() { }
 
   FixedVertexSupport(const FixedVertexSupport&) = delete;
-  FixedVertexSupport & operator= (const FixedVertexSupport &) = delete;
+  FixedVertexSupport& operator=(const FixedVertexSupport&) = delete;
 
-  FixedVertexSupport(FixedVertexSupport&&) = default;
-  FixedVertexSupport & operator= (FixedVertexSupport &&) = default;
+  // Declared but defined in .cpp to allow unique_ptr<DynamicGraph> with forward declaration
+  FixedVertexSupport(FixedVertexSupport&&);
+  FixedVertexSupport& operator=(FixedVertexSupport&&);
+  ~FixedVertexSupport();
 
   void setHypergraph(const Hypergraph* hg) {
     _hg = hg;
@@ -102,7 +113,6 @@ class FixedVertexSupport {
     return _total_fixed_vertex_weight.load(std::memory_order_relaxed);
   }
 
-  // ! Returns the weight of all fixed vertices assigned to the corresponding block
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE HypernodeWeight fixedVertexBlockWeight(const PartitionID block) const {
     ASSERT(block != kInvalidPartition && block < _k);
     return _fixed_vertex_block_weights[block].load(std::memory_order_relaxed);
@@ -110,7 +120,6 @@ class FixedVertexSupport {
 
   // ####################### Fixed Vertex Information #######################
 
-  // ! Fixes a node to a block
   void fixToBlock(const HypernodeID hn, const PartitionID block) {
     ASSERT(_hg);
     ASSERT(hn < _num_nodes);
@@ -133,12 +142,10 @@ class FixedVertexSupport {
     }
   }
 
-  // ! Returns whether or not the node is fixed to a block
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE bool isFixed(const HypernodeID hn) const {
     return hn < _num_nodes && fixedVertexBlock(hn) != kInvalidPartition;
   }
 
-  // ! Returns the fixed vertex block of the node
   MT_KAHYPAR_ATTRIBUTE_ALWAYS_INLINE PartitionID fixedVertexBlock(const HypernodeID hn) const {
     ASSERT(hn < _num_nodes);
     return __atomic_load_n(&_fixed_vertex_data[hn].block, __ATOMIC_RELAXED);
@@ -146,17 +153,34 @@ class FixedVertexSupport {
 
   // ####################### (Un)contractions #######################
 
-  // ! Contracts v onto u. If v is a fixed vertex than u becomes also an fixed vertex.
-  // ! If u and v are fixed vertices, then both must be assigned to same block
-  // ! The function returns false, if u and v are fixed and are assigned to different blocks
   bool contract(const HypernodeID u, const HypernodeID v);
-
-  // ! Contracts v onto u. Unlike `contract`, this assumes than any contractions of other nodes
-  // ! onto v form a new cluster without v instead of joining the same cluster (see deterministic coarsening).
   bool contractWithoutChains(const HypernodeID u, const HypernodeID v);
-
-  // ! Uncontract v from u. This reverts the corresponding contraction operation of v onto u.
   void uncontract(const HypernodeID u, const HypernodeID v);
+
+  // ####################### Negative Constraints #######################
+
+  bool hasNegativeConstraints() const {
+    return _constraint_graph != nullptr;
+  }
+
+  // ! Builds the constraint graph from the given pairs of node IDs.
+  // ! Defined in fixed_vertex_support.cpp to avoid circular includes.
+  void setNegativeConstraints(const vec<std::pair<HypernodeID, HypernodeID>>& constraints);
+
+  // ! Returns the constraint graph. Only valid if hasNegativeConstraints() is true.
+  const DynamicGraph& getConstraintGraph() const {
+    ASSERT(_constraint_graph != nullptr);
+    return *_constraint_graph;
+  }
+
+  // ! Maps a hypergraph node ID to its ID in the constraint graph.
+  // ! Returns false if the node is not involved in any constraint.
+  bool getConstraintIdFromHypergraphId(const HypernodeID hg_id, HypernodeID& out_id) const {
+    auto it = _hg_id_to_constraint_id.find(hg_id);
+    if (it == _hg_id_to_constraint_id.end()) return false;
+    out_id = it->second;
+    return true;
+  }
 
   // ####################### Miscellaneous #######################
 
@@ -169,11 +193,13 @@ class FixedVertexSupport {
     cpy._fixed_vertex_block_weights = _fixed_vertex_block_weights;
     cpy._max_block_weights = _max_block_weights;
     cpy._fixed_vertex_data = _fixed_vertex_data;
+    // _constraint_graph and _hg_id_to_constraint_id not copied:
+    // they are read-only after construction and large; caller can rebuild if needed
     return cpy;
   }
 
   size_t size_in_bytes() const {
-    return ( sizeof(CAtomic<HypernodeWeight>) + sizeof(HypernodeWeight)) * _k +
+    return (sizeof(CAtomic<HypernodeWeight>) + sizeof(HypernodeWeight)) * _k +
       sizeof(FixedVertexData) * _num_nodes;
   }
 
@@ -182,24 +208,22 @@ class FixedVertexSupport {
 
   // ! Number of nodes
   HypernodeID _num_nodes;
-
   // ! Number of blocks
   PartitionID _k;
-
   // ! Underlying hypergraph
   const Hypergraph* _hg;
-
   // ! Total weight of all fixed vertices
   CAtomic<HypernodeWeight> _total_fixed_vertex_weight;
-
   // ! Weight of all vertices fixed to a block
-  vec< CAtomic<HypernodeWeight> > _fixed_vertex_block_weights;
-
+  vec<CAtomic<HypernodeWeight>> _fixed_vertex_block_weights;
   // ! Maximum allowed fixed vertex block weight
   std::vector<HypernodeWeight> _max_block_weights;
-
   // ! Fixed vertex block IDs of each node
   vec<FixedVertexData> _fixed_vertex_data;
+  // ! Graph representing the negative constraints (node weight = original hypergraph ID)
+  std::unique_ptr<DynamicGraph> _constraint_graph;
+  // ! Map from hypergraph node ID to constraint graph node ID
+  std::unordered_map<HypernodeID, HypernodeID> _hg_id_to_constraint_id;
 };
 
 }  // namespace ds

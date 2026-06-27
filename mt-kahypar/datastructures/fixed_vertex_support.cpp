@@ -27,9 +27,47 @@
 #include "mt-kahypar/datastructures/fixed_vertex_support.h"
 
 #include "mt-kahypar/macros.h"
+#include "mt-kahypar/datastructures/dynamic_graph.h"
+#include "mt-kahypar/datastructures/dynamic_graph_factory.h"
 
 namespace mt_kahypar {
 namespace ds {
+
+  template<typename Hypergraph>
+FixedVertexSupport<Hypergraph>::~FixedVertexSupport() = default;
+
+template<typename Hypergraph>
+FixedVertexSupport<Hypergraph>::FixedVertexSupport(FixedVertexSupport&&) = default;
+
+template<typename Hypergraph>
+FixedVertexSupport<Hypergraph>& FixedVertexSupport<Hypergraph>::operator=(FixedVertexSupport&&) = default;
+
+template<typename Hypergraph>
+void FixedVertexSupport<Hypergraph>::setNegativeConstraints(
+    const vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
+  HypernodeID node_count = 0;
+  vec<HypernodeWeight> node_weight;
+  vec<std::pair<HypernodeID, HypernodeID>> remapped;
+  remapped.reserve(constraints.size());
+
+  for (const auto& [u, v] : constraints) {
+    auto [it1, ins1] = _hg_id_to_constraint_id.emplace(u, node_count);
+    if (ins1) { node_weight.push_back(u); node_count++; }
+    auto [it2, ins2] = _hg_id_to_constraint_id.emplace(v, node_count);
+    if (ins2) { node_weight.push_back(v); node_count++; }
+    remapped.emplace_back(it1->second, it2->second);
+  }
+
+  vec<HyperedgeWeight> edge_weight(remapped.size(), HyperedgeWeight(1));
+  _constraint_graph = std::make_unique<DynamicGraph>(
+    DynamicGraphFactory::construct_from_graph_edges(
+      node_count,
+      remapped.size(),
+      remapped,
+      edge_weight.data(),
+      node_weight.data(),
+      true));
+}
 
 template<typename Hypergraph>
 bool FixedVertexSupport<Hypergraph>::contract(const HypernodeID u, const HypernodeID v) {

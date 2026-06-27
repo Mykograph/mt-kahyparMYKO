@@ -739,15 +739,19 @@ class StaticGraph {
 
   void setMaxFixedVertexBlockWeight(const std::vector<HypernodeWeight> max_block_weights) {
     _fixed_vertices.setMaxBlockWeight(max_block_weights);
-  }
-
-  const FixedVertexSupport<StaticGraph>& fixedVertexSupport() const {
-    return _fixed_vertices;
-  }
+  } 
 
   FixedVertexSupport<StaticGraph> copyOfFixedVertexSupport() const {
     return _fixed_vertices.copy();
   }
+
+  FixedVertexSupport<StaticGraph>& fixedVertexSupport() {
+  return _fixed_vertices;
+}
+
+const FixedVertexSupport<StaticGraph>& fixedVertexSupport() const {
+  return _fixed_vertices;
+}
 
   // ####################### Contract / Uncontract #######################
 

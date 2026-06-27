@@ -113,12 +113,12 @@ mt_kahypar_hypergraph_t constructGraph(const HypernodeID& num_nodes,
 }
 
 mt_kahypar_hypergraph_t constructGraph(const mt_kahypar_hypergraph_type_t& type,
-                                            const HypernodeID& num_nodes,
-                                            const HyperedgeID& num_edges,
-                                            const EdgeVector& edges,
-                                            vec<HyperedgeWeight>& edge_weight,
-                                            vec<HypernodeWeight>& node_weight,
-                                            const bool stable_construction) {
+                                       const HypernodeID& num_nodes,
+                                       const HyperedgeID& num_edges,
+                                       const EdgeVector& edges,
+                                       vec<HyperedgeWeight>& edge_weight,
+                                       vec<HypernodeWeight>& node_weight,
+                                       const bool stable_construction) {
   switch ( type ) {
     case STATIC_GRAPH:
       ENABLE_GRAPHS(
@@ -146,69 +146,51 @@ struct ConstraintPairHash {
   }
 };
 
-template<typename EdgeVector>
+// Overload for HyperedgeVector (hypergraph case) — edges accessed via edge[0], edge[1]
+// Does NOT output constraints; used when no constraint graph is needed.
 void applyConstraintPairs(const std::string& constraint_filename,
                           const HyperedgeWeight constraint_weight,
                           const HypernodeID num_nodes,
                           HyperedgeID& num_edges,
-                          EdgeVector& edges,
-                          vec<HyperedgeWeight>& edge_weight) {
-  if (constraint_filename.empty()) {
-    return;
-  }
+                          HyperedgeVector& edges,
+                          vec<HyperedgeWeight>& edge_weight,
+                          vec<std::pair<HypernodeID, HypernodeID>>* out_constraints = nullptr) {
+  if (constraint_filename.empty()) return;
 
   std::ifstream file(constraint_filename);
-  if (!file) {
-    throw InvalidInputException("File not found: " + constraint_filename);
-  }
+  if (!file) throw InvalidInputException("File not found: " + constraint_filename);
 
   vec<std::pair<HypernodeID, HypernodeID>> constraints;
-  int64_t u = 0;
-  int64_t v = 0;
+  int64_t u = 0, v = 0;
   while (file >> u >> v) {
-    if (u < 0 || v < 0) {
+    if (u < 0 || v < 0)
       throw InvalidInputException("Constraint file contains a negative node id: " + constraint_filename);
-    }
-    if (u >= num_nodes || v >= num_nodes) {
+    if (u >= num_nodes || v >= num_nodes)
       throw InvalidInputException("Constraint file contains an invalid node id: " + constraint_filename);
-    }
-    if (u == v) {
+    if (u == v)
       throw InvalidInputException("Constraint file contains a self-constraint for node " + std::to_string(u));
-    }
     HypernodeID hu = static_cast<HypernodeID>(u);
     HypernodeID hv = static_cast<HypernodeID>(v);
-    if (hu > hv) {
-      std::swap(hu, hv);
-    }
+    if (hu > hv) std::swap(hu, hv);
     constraints.emplace_back(hu, hv);
   }
 
-  if (constraints.empty()) {
-    return;
-  }
+  if (constraints.empty()) return;
 
   std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
   edge_map.reserve(edges.size());
-
   for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edges.size()); ++he) {
     const auto& edge = edges[he];
-    if (edge.size() != 2) {
-      continue;
-    }
-    HypernodeID u = edge[0];
-    HypernodeID v = edge[1];
-    if (u > v) {
-      std::swap(u, v);
-    }
-    edge_map[{u, v}].push_back(he);
+    if (edge.size() != 2) continue;
+    HypernodeID eu = edge[0], ev = edge[1];
+    if (eu > ev) std::swap(eu, ev);
+    edge_map[{eu, ev}].push_back(he);
   }
 
   for (const auto& constraint : constraints) {
     auto it = edge_map.find(constraint);
     if (it != edge_map.end()) {
-      for (const HyperedgeID he : it->second) {
-        edge_weight[he] = constraint_weight;
-      }
+      for (const HyperedgeID he : it->second) edge_weight[he] = constraint_weight;
     } else {
       edges.emplace_back();
       auto& new_edge = edges.back();
@@ -216,79 +198,72 @@ void applyConstraintPairs(const std::string& constraint_filename,
       new_edge.push_back(constraint.first);
       new_edge.push_back(constraint.second);
       edge_weight.push_back(constraint_weight);
-      const HyperedgeID new_he = static_cast<HyperedgeID>(edges.size() - 1);
-      edge_map[constraint].push_back(new_he);
+      edge_map[constraint].push_back(static_cast<HyperedgeID>(edges.size() - 1));
       ++num_edges;
     }
   }
+
+  if (out_constraints) *out_constraints = constraints;
 }
 
+// Overload for EdgeVector (graph case) — edges accessed via .first, .second
 void applyConstraintPairs(const std::string& constraint_filename,
                           const HyperedgeWeight constraint_weight,
                           const HypernodeID num_nodes,
                           HyperedgeID& num_edges,
                           EdgeVector& edges,
-                          vec<HyperedgeWeight>& edge_weight) {
-  if (constraint_filename.empty()) {
-    return;
-  }
+                          vec<HyperedgeWeight>& edge_weight,
+                          vec<std::pair<HypernodeID, HypernodeID>>* out_constraints = nullptr) {
+  if (constraint_filename.empty()) return;
 
   std::ifstream file(constraint_filename);
-  if (!file) {
-    throw InvalidInputException("File not found: " + constraint_filename);
-  }
+  if (!file) throw InvalidInputException("File not found: " + constraint_filename);
 
   vec<std::pair<HypernodeID, HypernodeID>> constraints;
-  int64_t u = 0;
-  int64_t v = 0;
+  int64_t u = 0, v = 0;
   while (file >> u >> v) {
-    if (u < 0 || v < 0) {
+    if (u < 0 || v < 0)
       throw InvalidInputException("Constraint file contains a negative node id: " + constraint_filename);
-    }
-    if (u >= num_nodes || v >= num_nodes) {
+    if (u >= num_nodes || v >= num_nodes)
       throw InvalidInputException("Constraint file contains an invalid node id: " + constraint_filename);
-    }
-    if (u == v) {
+    if (u == v)
       throw InvalidInputException("Constraint file contains a self-constraint for node " + std::to_string(u));
-    }
     HypernodeID hu = static_cast<HypernodeID>(u);
     HypernodeID hv = static_cast<HypernodeID>(v);
-    if (hu > hv) {
-      std::swap(hu, hv);
-    }
+    if (hu > hv) std::swap(hu, hv);
     constraints.emplace_back(hu, hv);
   }
 
-  if (constraints.empty()) {
-    return;
-  }
+  if (constraints.empty()) return;
 
   std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
   edge_map.reserve(edges.size());
-
   for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edges.size()); ++he) {
-    HypernodeID u = edges[he].first;
-    HypernodeID v = edges[he].second;
-    if (u > v) {
-      std::swap(u, v);
-    }
-    edge_map[{u, v}].push_back(he);
+    HypernodeID eu = edges[he].first, ev = edges[he].second;
+    if (eu > ev) std::swap(eu, ev);
+    edge_map[{eu, ev}].push_back(he);
   }
 
   for (const auto& constraint : constraints) {
     auto it = edge_map.find(constraint);
     if (it != edge_map.end()) {
-      for (const HyperedgeID he : it->second) {
-        edge_weight[he] = constraint_weight;
-      }
+      for (const HyperedgeID he : it->second) edge_weight[he] = constraint_weight;
     } else {
       edges.emplace_back(constraint.first, constraint.second);
       edge_weight.push_back(constraint_weight);
-      const HyperedgeID new_he = static_cast<HyperedgeID>(edges.size() - 1);
-      edge_map[constraint].push_back(new_he);
+      edge_map[constraint].push_back(static_cast<HyperedgeID>(edges.size() - 1));
       ++num_edges;
     }
   }
+
+  if (out_constraints) *out_constraints = constraints;
+}
+
+// Helper to attach the constraint graph to a typed hypergraph after construction
+template<typename Hypergraph>
+void attachConstraintGraph(Hypergraph& hg,
+                           const vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
+  hg.fixedVertexSupport().setNegativeConstraints(constraints);
 }
 
 mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
@@ -307,10 +282,26 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
   readHypergraphFile(filename, num_hyperedges, num_hypernodes,
                      num_removed_single_pin_hyperedges, hyperedges,
                      hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
-  applyConstraintPairs(constraint_filename, constraint_weight, num_hypernodes, num_hyperedges, hyperedges, hyperedges_weight);
-  return constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
-                             hyperedges_weight, hypernodes_weight,
-                             num_removed_single_pin_hyperedges, stable_construction);
+
+  vec<std::pair<HypernodeID, HypernodeID>> constraints;
+  applyConstraintPairs(constraint_filename, constraint_weight, num_hypernodes,
+                       num_hyperedges, hyperedges, hyperedges_weight, &constraints);
+
+  mt_kahypar_hypergraph_t hg = constructHypergraph(type, num_hypernodes, num_hyperedges,
+                                                    hyperedges, hyperedges_weight,
+                                                    hypernodes_weight,
+                                                    num_removed_single_pin_hyperedges,
+                                                    stable_construction);
+  if (!constraints.empty()) {
+    switch (hg.type) {
+      case STATIC_HYPERGRAPH:
+        attachConstraintGraph(utils::cast<ds::StaticHypergraph>(hg), constraints); break;
+      ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH:
+        attachConstraintGraph(utils::cast<ds::DynamicHypergraph>(hg), constraints); break;)
+      default: break;
+    }
+  }
+  return hg;
 }
 
 mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
@@ -323,16 +314,30 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
   HypernodeID num_vertices = 0;
   vec<HyperedgeWeight> edges_weight;
   vec<HypernodeWeight> nodes_weight;
+
   if (type == STATIC_GRAPH || type == DYNAMIC_GRAPH) {
     EdgeVector edges;
+    vec<std::pair<HypernodeID, HypernodeID>> constraints;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
-    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices, num_edges, edges, edges_weight);
-    return constructGraph(type, num_vertices, num_edges, edges,
-                          edges_weight, nodes_weight, stable_construction);
+    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
+                         num_edges, edges, edges_weight, &constraints);
+    mt_kahypar_hypergraph_t hg = constructGraph(type, num_vertices, num_edges, edges,
+                                                edges_weight, nodes_weight, stable_construction);
+    if (!constraints.empty()) {
+      switch (hg.type) {
+        ENABLE_GRAPHS(case STATIC_GRAPH:
+          attachConstraintGraph(utils::cast<ds::StaticGraph>(hg), constraints); break;)
+        ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH:
+          attachConstraintGraph(utils::cast<ds::DynamicGraph>(hg), constraints); break;)
+        default: break;
+      }
+    }
+    return hg;
   } else {
     HyperedgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
-    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices, num_edges, edges, edges_weight);
+    applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
+                         num_edges, edges, edges_weight);
     return constructHypergraph(type, num_vertices, num_edges, edges,
                                edges_weight, nodes_weight, 0, stable_construction);
   }
@@ -426,14 +431,11 @@ void addFixedVertices(mt_kahypar_hypergraph_t hypergraph,
     case STATIC_HYPERGRAPH:
       addFixedVertices(utils::cast<ds::StaticHypergraph>(hypergraph), fixed_vertices, k); break;
     ENABLE_GRAPHS(case STATIC_GRAPH:
-      addFixedVertices(utils::cast<ds::StaticGraph>(hypergraph), fixed_vertices, k); break;
-    )
+      addFixedVertices(utils::cast<ds::StaticGraph>(hypergraph), fixed_vertices, k); break;)
     ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH:
-      addFixedVertices(utils::cast<ds::DynamicHypergraph>(hypergraph), fixed_vertices, k); break;
-    )
+      addFixedVertices(utils::cast<ds::DynamicHypergraph>(hypergraph), fixed_vertices, k); break;)
     ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH:
-      addFixedVertices(utils::cast<ds::DynamicGraph>(hypergraph), fixed_vertices, k); break;
-    )
+      addFixedVertices(utils::cast<ds::DynamicGraph>(hypergraph), fixed_vertices, k); break;)
     case NULLPTR_HYPERGRAPH:
     default: break;
   }
@@ -452,14 +454,11 @@ void removeFixedVertices(mt_kahypar_hypergraph_t hypergraph) {
     case STATIC_HYPERGRAPH:
       removeFixedVertices(utils::cast<ds::StaticHypergraph>(hypergraph)); break;
     ENABLE_GRAPHS(case STATIC_GRAPH:
-      removeFixedVertices(utils::cast<ds::StaticGraph>(hypergraph)); break;
-    )
+      removeFixedVertices(utils::cast<ds::StaticGraph>(hypergraph)); break;)
     ENABLE_HIGHEST_QUALITY(case DYNAMIC_HYPERGRAPH:
-      removeFixedVertices(utils::cast<ds::DynamicHypergraph>(hypergraph)); break;
-    )
+      removeFixedVertices(utils::cast<ds::DynamicHypergraph>(hypergraph)); break;)
     ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(case DYNAMIC_GRAPH:
-      removeFixedVertices(utils::cast<ds::DynamicGraph>(hypergraph)); break;
-    )
+      removeFixedVertices(utils::cast<ds::DynamicGraph>(hypergraph)); break;)
     case NULLPTR_HYPERGRAPH:
     default: break;
   }
