@@ -296,6 +296,7 @@ class Context {
 
   float tuning_parameter = 1.0;
   bool heuristicEdgeSize = false;
+  bool postProcessing = false;
 
   int violated_constraints = 0;
 

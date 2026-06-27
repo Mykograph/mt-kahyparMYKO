@@ -370,7 +370,7 @@ namespace mt_kahypar {
     // FIX 5: Guard on the constraint filename being set rather than calling
     // the non-existent hasNegativeConstraints() method on the hypergraph.
     // An empty filename means no negative constraints were provided.
-    if (!context.partition.constraint_filename.empty()) {
+    if (!context.partition.constraint_filename.empty() && context.postProcessing) {
       constraints::postprocessNegativeConstraints(partitioned_hypergraph, context);
     }
 
@@ -438,7 +438,7 @@ namespace mt_kahypar {
     forceFixedVertexAssignment(partitioned_hg, context);
 
     // FIX 5 (cont.): same guard applied consistently in the V-cycle path.
-    if (!context.partition.constraint_filename.empty()) {
+    if (!context.partition.constraint_filename.empty() && context.postProcessing) {
       constraints::postprocessNegativeConstraints(partitioned_hg, context);
     }
 

@@ -277,6 +277,11 @@ namespace mt_kahypar {
       "Weight assigned to constraint edges."
     )->capture_default_str();
     app.add_option(
+      "--post-processing",
+      context.postProcessing,
+      "If true, performs a post-processing step after partitioning to fix violated constraints"
+    )->capture_default_str();
+    app.add_option(
       "--part-weights",
       context.partition.max_part_weights,
       "Use the specified individual part weights instead of epsilon."
