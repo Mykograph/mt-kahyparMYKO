@@ -17,6 +17,13 @@ build-h/*
 build-h-blum/*
 build-h-backus/*
 build-h-liskow/*
+build-blum/*
+build-cook-postProc/*
+build-cook/*
+build-feigenbaum/*
+build-hellman/*
+build-naur/*
+build-postProc/*
 build_debug/*
 build_release/*
 build_clang/*

@@ -42,6 +42,31 @@ FixedVertexSupport<Hypergraph>::FixedVertexSupport(FixedVertexSupport&&) = defau
 template<typename Hypergraph>
 FixedVertexSupport<Hypergraph>& FixedVertexSupport<Hypergraph>::operator=(FixedVertexSupport&&) = default;
 
+template<class Hypergraph>
+FixedVertexSupport<Hypergraph>::FixedVertexSupport() :
+  _num_nodes(0),
+  _k(kInvalidPartition),
+  _hg(nullptr),
+  _total_fixed_vertex_weight(0),
+  _fixed_vertex_block_weights(),
+  _max_block_weights(),
+  _fixed_vertex_data(),
+  _constraint_graph(nullptr),
+  _hg_id_to_constraint_id() { }
+
+template<class Hypergraph>
+FixedVertexSupport<Hypergraph>::FixedVertexSupport(const HypernodeID num_nodes,
+                                                   const PartitionID k) :
+  _num_nodes(num_nodes),
+  _k(k),
+  _hg(nullptr),
+  _total_fixed_vertex_weight(0),
+  _fixed_vertex_block_weights(k, CAtomic<HypernodeWeight>(0)),
+  _max_block_weights(k, std::numeric_limits<HypernodeWeight>::max()),
+  _fixed_vertex_data(num_nodes, FixedVertexData { kInvalidPartition, 0, 0, SpinLock() }),
+  _constraint_graph(nullptr),
+  _hg_id_to_constraint_id() { }
+
 template<typename Hypergraph>
 void FixedVertexSupport<Hypergraph>::setNegativeConstraints(
     const vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
