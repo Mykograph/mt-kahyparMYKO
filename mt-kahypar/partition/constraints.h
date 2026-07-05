@@ -8,7 +8,6 @@
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/factories.h"
 #include "mt-kahypar/partition/refinement/gains/gain_cache_ptr.h"
-#include "mt-kahypar/partition/refinement/i_rebalancer.h"
 #include "mt-kahypar/datastructures/priority_queue.h"
 #include "mt-kahypar/utils/cast.h"
 
@@ -168,16 +167,11 @@ template<typename PartitionedHypergraph>
 void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
-  std::unique_ptr<IRebalancer> rebalancer = RebalancerFactory::getInstance().createObject(
-    context.refinement.rebalancing.algorithm,
-    partitioned_hg.initialNumNodes(),
-    context,
-    gain_cache);
 
   descendingConstraintDegree(partitioned_hg, gain_cache);
+
   // Protect all nodes that participate in negative constraints by fixing
-  // them to their current block so that the rebalancer cannot move them
-  // and thus destroy constraints.
+  // them to their current block so that no later refinement moves them.
   const auto constraints = readConstraintFile(context.partition.constraint_filename);
   for (const auto& [u, v] : constraints) {
     if (u < partitioned_hg.initialNumNodes()) {
@@ -194,20 +188,12 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
     }
   }
 
-  Metrics metrics {
-    metrics::quality(partitioned_hg, context),
-    metrics::imbalance(partitioned_hg, context)
-  };
-  mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
-  rebalancer->initialize(phg);
-  rebalancer->refine(phg, {}, metrics, 0.0);
-
   LOG << "-------------- stats after postprocessing --------------";
   LOG << "km1       =" << metrics::quality(partitioned_hg, context);
   LOG << "Imbalance =" << metrics::imbalance(partitioned_hg, context);
   LOG << (verifyConstraints(partitioned_hg, context)
-    ? "Constraints respected after rebalancing"
-    : "!!! Rebalancer destroyed constraints !!!");
+    ? "Constraints respected after postprocessing"
+    : "!!! Constraints violated after postprocessing !!!");
   LOG << "";
 
   GainCachePtr::deleteGainCache(gain_cache);
