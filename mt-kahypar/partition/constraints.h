@@ -157,6 +157,43 @@ void descendingConstraintDegree(PartitionedHypergraph& partitioned_hg,
 
     if (new_partition != partition_id) {
       partitioned_hg.changeNodePart(hg_node_id, partition_id, new_partition, delta_func);
+
+      // If the moved hypergraph node participates in the constraint graph,
+      // update the heap keys of its constraint-graph neighbors so the PQ
+      // reflects the changed violation counts. Also re-insert the moved
+      // node into the heap if it still violates constraints.
+      HypernodeID moved_cnode;
+      if ( partitioned_hg.fixedVertexSupport().getConstraintIdFromHypergraphId(hg_node_id, moved_cnode) ) {
+        // update neighbors
+        for ( const auto& e_id : cg.incidentEdges(moved_cnode) ) {
+          HypernodeID neighbor = cg.edge(e_id).target;
+          Key new_key = {
+            incidentNodesInSamePart(partitioned_hg, neighbor),
+            cg.nodeDegree(neighbor),
+            neighbor
+          };
+          // insert or adjust neighbor key in heap
+          if (positions[neighbor] == invalid_position) {
+            heap.insert(neighbor, new_key);
+          } else {
+            heap.adjustKey(neighbor, new_key);
+          }
+        }
+
+        // update moved node key (reinsert if still violating)
+        Key moved_key = {
+          incidentNodesInSamePart(partitioned_hg, moved_cnode),
+          cg.nodeDegree(moved_cnode),
+          moved_cnode
+        };
+        if ( moved_key != Key{0, cg.nodeDegree(moved_cnode), moved_cnode} ) {
+          if (positions[moved_cnode] == invalid_position) {
+            heap.insert(moved_cnode, moved_key);
+          } else {
+            heap.adjustKey(moved_cnode, moved_key);
+          }
+        }
+      }
     }
   }
 }
