@@ -347,20 +347,21 @@ class StaticGraph {
     // ! invalid edge
     TmpEdgeInformation() :
       _target(kInvalidHyperedge),
-      _valid_or_weight(0),
-      _id(kInvalidHyperedge) {
+      _weight(0),
+      _id(kInvalidHyperedge),
+      _valid(false) {
     }
 
     // ! valid edge
     TmpEdgeInformation(HyperedgeID target, HyperedgeWeight weight, HyperedgeID id) :
       _target(target),
-      _valid_or_weight(weight),
-      _id(id) {
-      ASSERT(isValid());
+      _weight(weight),
+      _id(id),
+      _valid(true) {
     }
 
     bool isValid() const {
-      return _valid_or_weight != 0;
+      return _valid;
     }
 
     HyperedgeID getTarget() const {
@@ -370,7 +371,7 @@ class StaticGraph {
 
     HyperedgeWeight getWeight() const {
       ASSERT(isValid());
-      return _valid_or_weight;
+      return _weight;
     }
 
     HyperedgeID getID() const {
@@ -379,12 +380,12 @@ class StaticGraph {
     }
 
     void invalidate() {
-      _valid_or_weight = 0;
+      _valid = false;
     }
 
     void addWeight(HyperedgeWeight weight) {
       ASSERT(isValid());
-      _valid_or_weight += weight;
+      _weight += weight;
     }
 
     void updateID(HyperedgeID id) {
@@ -393,8 +394,9 @@ class StaticGraph {
     }
 
     HyperedgeID _target;
-    HyperedgeWeight _valid_or_weight;
+    HyperedgeWeight _weight;
     HyperedgeID _id;
+    bool _valid;
   };
 
   // ! Contains buffers that are needed during multilevel contractions.
