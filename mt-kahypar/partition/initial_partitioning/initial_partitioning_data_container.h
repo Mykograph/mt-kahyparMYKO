@@ -341,6 +341,12 @@ class InitialPartitioningDataContainer {
       });
     }
 
+    ~LocalInitialPartitioningHypergraph() {
+      if ( _gain_cache.type != GainPolicy::none ) {
+        GainCachePtr::deleteGainCache(_gain_cache);
+      }
+    }
+
     PartitionedHypergraph _partitioned_hypergraph;
     const Context& _context;
     GlobalInitialPartitioningStats& _global_stats;
