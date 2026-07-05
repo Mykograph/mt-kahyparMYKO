@@ -170,23 +170,11 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
 
   descendingConstraintDegree(partitioned_hg, gain_cache);
 
-  // Protect all nodes that participate in negative constraints by fixing
-  // them to their current block so that no later refinement moves them.
+  // No fixing of nodes: postprocessing performs local moves to resolve
+  // negative constraints and we no longer invoke the rebalancer/refinement
+  // path here. Avoid manipulating FixedVertexSupport to prevent lifecycle
+  // issues and potential null-pointer crashes.
   const auto constraints = readConstraintFile(context.partition.constraint_filename);
-  for (const auto& [u, v] : constraints) {
-    if (u < partitioned_hg.initialNumNodes()) {
-      const PartitionID part_u = partitioned_hg.partID(u);
-      if (part_u != kInvalidPartition) {
-        partitioned_hg.fixedVertexSupport().fixToBlock(u, part_u);
-      }
-    }
-    if (v < partitioned_hg.initialNumNodes()) {
-      const PartitionID part_v = partitioned_hg.partID(v);
-      if (part_v != kInvalidPartition) {
-        partitioned_hg.fixedVertexSupport().fixToBlock(v, part_v);
-      }
-    }
-  }
 
   LOG << "-------------- stats after postprocessing --------------";
   LOG << "km1       =" << metrics::quality(partitioned_hg, context);
