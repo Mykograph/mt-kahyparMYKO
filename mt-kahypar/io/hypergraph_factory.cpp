@@ -263,6 +263,7 @@ void applyConstraintPairs(const std::string& constraint_filename,
 template<typename Hypergraph>
 void attachConstraintGraph(Hypergraph& hg,
                            const vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
+  hg.fixedVertexSupport().setHypergraph(&hg);
   hg.fixedVertexSupport().setNegativeConstraints(constraints);
 }
 
