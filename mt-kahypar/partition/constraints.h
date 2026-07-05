@@ -175,6 +175,24 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
     gain_cache);
 
   descendingConstraintDegree(partitioned_hg, gain_cache);
+  // Protect all nodes that participate in negative constraints by fixing
+  // them to their current block so that the rebalancer cannot move them
+  // and thus destroy constraints.
+  const auto constraints = readConstraintFile(context.partition.constraint_filename);
+  for (const auto& [u, v] : constraints) {
+    if (u < partitioned_hg.initialNumNodes()) {
+      const PartitionID part_u = partitioned_hg.partID(u);
+      if (part_u != kInvalidPartition) {
+        partitioned_hg.fixedVertexSupport().fixToBlock(u, part_u);
+      }
+    }
+    if (v < partitioned_hg.initialNumNodes()) {
+      const PartitionID part_v = partitioned_hg.partID(v);
+      if (part_v != kInvalidPartition) {
+        partitioned_hg.fixedVertexSupport().fixToBlock(v, part_v);
+      }
+    }
+  }
 
   Metrics metrics {
     metrics::quality(partitioned_hg, context),
