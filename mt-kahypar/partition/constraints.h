@@ -4,6 +4,7 @@
 #include <limits>
 #include <memory>
 #include <vector>
+#include <algorithm>
 
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/factories.h"
@@ -274,7 +275,7 @@ void propagateConstraintFixes(PartitionedHypergraph& partitioned_hg,
     }
   }
 
-  DBG << "propagateConstraintFixes moved=" << moves << " max_moves=" << max_moves;
+  LOG << "propagateConstraintFixes moved=" << moves << " max_moves=" << max_moves;
 }
 
 // ####################### Entry point #######################
