@@ -353,7 +353,7 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
         if (best == cur_part) continue;
 
         // attempt move with gain-cache-aware changeNodePart
-        bool moved = phg.changeNodePart(gc, hg_node_id, cur_part, best,
+        bool moved = phg.changeNodePart(hg_node_id, cur_part, best,
           ctx.partition.max_part_weights[best], [&]() { ++moves_this_round; ++total_moves; }, delta_func_local);
         if (moved) {
           pin_cooldown[cnode] = pin_rounds;
