@@ -287,7 +287,93 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
 
   // Use a propagation-based fixer that incrementally processes violating
   // constraint nodes and reacts to neighbor moves until convergence.
-  propagateConstraintFixes(partitioned_hg, gain_cache, context);
+  // constraint nodes and reacts to neighbor moves until convergence.
+  // If the simple propagation approach fails, use a more robust iterative
+  // fixer that pins moved nodes temporarily and enforces block capacity
+  // constraints to avoid partition collapse.
+  auto robustConstraintFixes = [&] (PartitionedHypergraph& phg, gain_cache_t& gc, const Context& ctx) {
+    GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+      [&](auto& cache) { cache.initializeGainCache(phg); }, gc);
+
+    auto delta_func_local = [&phg, &gc](const SynchronizedEdgeUpdate& sync_update) {
+      GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>([&](auto& cache) {
+        cache.deltaGainUpdate(phg, sync_update);
+      }, gc);
+    };
+
+    const ds::DynamicGraph& cg = const_cast<const PartitionedHypergraph&>(phg).fixedVertexSupport().getConstraintGraph();
+    const size_t n = cg.initialNumNodes();
+
+    const size_t max_rounds = 16;
+    const size_t pin_rounds = 2; // number of rounds to pin moved nodes
+    vec<uint8_t> pin_cooldown(n, 0);
+
+    size_t total_moves = 0;
+    for (size_t round = 0; round < max_rounds; ++round) {
+      // collect violating nodes
+      vec<std::pair<HypernodeID, HypernodeID>> viols; // (cnode, violation_count)
+      for (HypernodeID cnode : cg.nodes()) {
+        if (incidentNodesInSamePart(phg, cnode) > 0) {
+          viols.emplace_back(cnode, incidentNodesInSamePart(phg, cnode));
+        }
+      }
+      if (viols.empty()) break;
+
+      // process highest violation nodes first
+      std::sort(viols.begin(), viols.end(), [](const auto& a, const auto& b){ return a.second > b.second; });
+
+      size_t moves_this_round = 0;
+      for (const auto& [cnode, cnt] : viols) {
+        if (pin_cooldown[cnode] > 0) continue;
+        const HypernodeID hg_node_id = static_cast<HypernodeID>(cg.nodeWeight(cnode));
+        const PartitionID cur_part = phg.partID(hg_node_id);
+
+        // compute invalid partitions
+        vec<bool> invalid_partitions(phg.k(), false);
+        for (const auto& e : cg.incidentEdges(cnode)) {
+          HypernodeID nb = cg.edge(e).target;
+          HypernodeID nb_hg = static_cast<HypernodeID>(cg.nodeWeight(nb));
+          invalid_partitions[ phg.partID(nb_hg) ] = true;
+        }
+        if (!invalid_partitions[cur_part]) continue; // no longer violating
+
+        // evaluate best allowed partition under capacity
+        PartitionID best = cur_part;
+        HyperedgeWeight best_gain = std::numeric_limits<HyperedgeWeight>::min();
+        for (PartitionID p = 0; p < phg.k(); ++p) {
+          if (invalid_partitions[p]) continue;
+          const HypernodeWeight node_w = phg.nodeWeight(hg_node_id);
+          if (phg.partWeight(p) + node_w > ctx.partition.max_part_weights[p]) continue;
+          HyperedgeWeight gain = GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+            [&](const auto& cache) {
+              return cache.gain(hg_node_id, cur_part, p);
+            }, gc);
+          if (gain > best_gain) { best_gain = gain; best = p; }
+        }
+        if (best == cur_part) continue;
+
+        // attempt move with gain-cache-aware changeNodePart
+        bool moved = phg.changeNodePart(gc, hg_node_id, cur_part, best,
+          ctx.partition.max_part_weights[best], [&]() { ++moves_this_round; ++total_moves; }, delta_func_local);
+        if (moved) {
+          pin_cooldown[cnode] = pin_rounds;
+          // also lightly pin neighbors to avoid immediate oscillation
+          for (const auto& e : cg.incidentEdges(cnode)) {
+            HypernodeID nb = cg.edge(e).target;
+            pin_cooldown[nb] = std::max<uint8_t>(pin_cooldown[nb], 1);
+          }
+        }
+      }
+
+      // decrease cooldowns
+      for (size_t i = 0; i < n; ++i) if (pin_cooldown[i] > 0) --pin_cooldown[i];
+
+      if (moves_this_round == 0) break;
+    }
+    LOG << "robustConstraintFixes total_moves=" << total_moves;
+  };
+
+  robustConstraintFixes(partitioned_hg, gain_cache, context);
 
   // No fixing of nodes: postprocessing performs local moves to resolve
   // negative constraints and we no longer invoke the rebalancer/refinement
