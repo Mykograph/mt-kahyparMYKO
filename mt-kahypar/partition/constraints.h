@@ -157,10 +157,9 @@ void descendingConstraintDegree(PartitionedHypergraph& partitioned_hg,
 
     if (new_partition != partition_id) {
       partitioned_hg.changeNodePart(hg_node_id, partition_id, new_partition, delta_func);
-      // After moving the node, update keys of all constraint-graph neighbors
-      // so that their violation counts reflect the change. Also, if the
-      // moved node is still violating, reinsert it with updated key so it
-      // can be processed again.
+
+      // Update keys of all constraint-graph neighbors so their violation
+      // counts reflect the recent move.
       for (const auto& edge_id : cg.incidentEdges(cnode)) {
         HypernodeID neighbor = cg.edge(edge_id).target;
         Key newKey = {
@@ -168,54 +167,24 @@ void descendingConstraintDegree(PartitionedHypergraph& partitioned_hg,
           cg.nodeDegree(neighbor),
           neighbor
         };
-        heap.insertOrAdjustKey(neighbor, newKey);
+        if (heap.contains(neighbor)) {
+          heap.adjustKey(neighbor, newKey);
+        } else if (static_cast<size_t>(neighbor) < positions.size()) {
+          heap.insert(neighbor, newKey);
+        }
       }
 
-      // Re-evaluate current constraint node and reinsert if still violating
+      // Re-evaluate the moved constraint node and reinsert if still violating
       Key curKey = {
         incidentNodesInSamePart(partitioned_hg, cnode),
         cg.nodeDegree(cnode),
         cnode
       };
-      // If still violating (first element > 0) reinsert
       if (std::get<0>(curKey) > 0) {
-        heap.insertOrAdjustKey(cnode, curKey);
-      }
-
-      // If the moved hypergraph node participates in the constraint graph,
-      // update the heap keys of its constraint-graph neighbors so the PQ
-      // reflects the changed violation counts. Also re-insert the moved
-      // node into the heap if it still violates constraints.
-      HypernodeID moved_cnode;
-      if ( partitioned_hg.fixedVertexSupport().getConstraintIdFromHypergraphId(hg_node_id, moved_cnode) ) {
-        // update neighbors
-        for ( const auto& e_id : cg.incidentEdges(moved_cnode) ) {
-          HypernodeID neighbor = cg.edge(e_id).target;
-          Key new_key = {
-            incidentNodesInSamePart(partitioned_hg, neighbor),
-            cg.nodeDegree(neighbor),
-            neighbor
-          };
-          // insert or adjust neighbor key in heap
-          if (positions[neighbor] == invalid_position) {
-            heap.insert(neighbor, new_key);
-          } else {
-            heap.adjustKey(neighbor, new_key);
-          }
-        }
-
-        // update moved node key (reinsert if still violating)
-        Key moved_key = {
-          incidentNodesInSamePart(partitioned_hg, moved_cnode),
-          cg.nodeDegree(moved_cnode),
-          moved_cnode
-        };
-        if ( moved_key != Key{0, cg.nodeDegree(moved_cnode), moved_cnode} ) {
-          if (positions[moved_cnode] == invalid_position) {
-            heap.insert(moved_cnode, moved_key);
-          } else {
-            heap.adjustKey(moved_cnode, moved_key);
-          }
+        if (heap.contains(cnode)) {
+          heap.adjustKey(cnode, curKey);
+        } else if (static_cast<size_t>(cnode) < positions.size()) {
+          heap.insert(cnode, curKey);
         }
       }
     }
