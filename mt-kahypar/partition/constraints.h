@@ -10,6 +10,7 @@
 #include "mt-kahypar/partition/refinement/gains/gain_cache_ptr.h"
 #include "mt-kahypar/datastructures/priority_queue.h"
 #include "mt-kahypar/utils/cast.h"
+#include <deque>
 
 namespace mt_kahypar::constraints {
 
@@ -201,6 +202,81 @@ void descendingConstraintDegree(PartitionedHypergraph& partitioned_hg,
   }
 }
 
+// Propagation-based fixer: process a queue of violating constraint nodes and
+// move them to valid partitions (not occupied by any constraint neighbor).
+// This is incremental and reacts to neighbor moves until no violations
+// remain or a move limit is reached.
+template<typename PartitionedHypergraph>
+void propagateConstraintFixes(PartitionedHypergraph& partitioned_hg,
+                             gain_cache_t& gain_cache,
+                             const Context& context) {
+  GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+    [&](auto& cache) { cache.initializeGainCache(partitioned_hg); }, gain_cache);
+
+  auto delta_func = [&partitioned_hg, &gain_cache](const SynchronizedEdgeUpdate& sync_update) {
+    GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>([&](auto& cache) {
+      cache.deltaGainUpdate(partitioned_hg, sync_update);
+    }, gain_cache);
+  };
+
+  const ds::DynamicGraph& cg = const_cast<const PartitionedHypergraph&>(partitioned_hg).fixedVertexSupport().getConstraintGraph();
+  const size_t n = cg.initialNumNodes();
+  std::deque<HypernodeID> q;
+  vec<char> in_queue(n, 0);
+
+  // Initialize queue with all currently violating constraint nodes
+  for (HypernodeID cnode : cg.nodes()) {
+    if (incidentNodesInSamePart(partitioned_hg, cnode) > 0) {
+      q.push_back(cnode);
+      in_queue[cnode] = 1;
+    }
+  }
+
+  const size_t max_moves = std::max<size_t>(n * 4, 1000);
+  size_t moves = 0;
+
+  while (!q.empty() && moves < max_moves) {
+    HypernodeID cnode = q.front(); q.pop_front(); in_queue[cnode] = 0;
+    const HypernodeID hg_node_id = static_cast<HypernodeID>(cg.nodeWeight(cnode));
+    const PartitionID cur_part = partitioned_hg.partID(hg_node_id);
+
+    // compute invalid partitions occupied by neighbors
+    vec<bool> invalid_partitions(partitioned_hg.k(), false);
+    for ( const auto& e : cg.incidentEdges(cnode) ) {
+      HypernodeID nb = cg.edge(e).target;
+      HypernodeID nb_hg = static_cast<HypernodeID>(cg.nodeWeight(nb));
+      invalid_partitions[ partitioned_hg.partID(nb_hg) ] = true;
+    }
+
+    // still violating?
+    if (!invalid_partitions[cur_part]) continue;
+
+    // choose best partition avoiding neighbors' blocks
+    PartitionID best = getBestPartition<PartitionedHypergraph>(hg_node_id, cur_part, invalid_partitions, gain_cache);
+    if (best == cur_part) continue;
+
+    partitioned_hg.changeNodePart(hg_node_id, cur_part, best, delta_func);
+    ++moves;
+
+    // after a move, enqueue all constraint-graph neighbors (they may now violate)
+    for ( const auto& e : cg.incidentEdges(cnode) ) {
+      HypernodeID nb = cg.edge(e).target;
+      if (!in_queue[nb] && incidentNodesInSamePart(partitioned_hg, nb) > 0) {
+        q.push_back(nb);
+        in_queue[nb] = 1;
+      }
+    }
+
+    // also re-enqueue the moved node if it still violates
+    if (incidentNodesInSamePart(partitioned_hg, cnode) > 0 && !in_queue[cnode]) {
+      q.push_back(cnode);
+      in_queue[cnode] = 1;
+    }
+  }
+
+  DBG << "propagateConstraintFixes moved=" << moves << " max_moves=" << max_moves;
+}
+
 // ####################### Entry point #######################
 
 template<typename PartitionedHypergraph>
@@ -208,17 +284,9 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
 
-  // Repeat adaptive PQ passes until no violations remain or no improvement
-  const int max_iters = 5;
-  size_t prev_violations = countConstraintViolations(partitioned_hg, context);
-  for (int iter = 0; iter < max_iters; ++iter) {
-    descendingConstraintDegree(partitioned_hg, gain_cache);
-    size_t cur_violations = countConstraintViolations(partitioned_hg, context);
-    LOG << "postprocessing iter=" << iter << " violations=" << cur_violations;
-    if (cur_violations == 0) break;
-    if (cur_violations >= prev_violations) break; // no improvement, stop
-    prev_violations = cur_violations;
-  }
+  // Use a propagation-based fixer that incrementally processes violating
+  // constraint nodes and reacts to neighbor moves until convergence.
+  propagateConstraintFixes(partitioned_hg, gain_cache, context);
 
   // No fixing of nodes: postprocessing performs local moves to resolve
   // negative constraints and we no longer invoke the rebalancer/refinement
