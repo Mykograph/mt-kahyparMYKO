@@ -284,6 +284,17 @@ template<typename PartitionedHypergraph>
 void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
+  LOG << "Starting postprocessNegativeConstraints; constraint_file='" << context.partition.constraint_filename << "'";
+  // report number of constraint nodes and initial violations
+  try {
+    const ds::DynamicGraph& dbg_cg = const_cast<const PartitionedHypergraph&>(partitioned_hg).fixedVertexSupport().getConstraintGraph();
+    size_t num_cnodes = dbg_cg.initialNumNodes();
+    size_t init_viol = 0;
+    for (HypernodeID cn : dbg_cg.nodes()) if (incidentNodesInSamePart(partitioned_hg, cn) > 0) ++init_viol;
+    LOG << "Constraint graph nodes=" << num_cnodes << " initial_violations=" << init_viol;
+  } catch (...) {
+    LOG << "No constraint graph attached or error while inspecting it.";
+  }
 
   // Use a propagation-based fixer that incrementally processes violating
   // constraint nodes and reacts to neighbor moves until convergence.
