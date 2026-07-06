@@ -45,6 +45,16 @@ bool verifyConstraints(const PartitionedHypergraph& partitioned_hg, const Contex
   return true;
 }
 
+template<typename PartitionedHypergraph>
+size_t countConstraintViolations(const PartitionedHypergraph& partitioned_hg, const Context& context) {
+  const auto constraints = readConstraintFile(context.partition.constraint_filename);
+  size_t cnt = 0;
+  for (const auto& [u, v] : constraints) {
+    if (partitioned_hg.partID(u) == partitioned_hg.partID(v)) ++cnt;
+  }
+  return cnt;
+}
+
 // ####################### PQ setup #######################
 
 using Key = std::tuple<HypernodeID, HypernodeID, HypernodeID>;
@@ -198,7 +208,17 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
 
-  descendingConstraintDegree(partitioned_hg, gain_cache);
+  // Repeat adaptive PQ passes until no violations remain or no improvement
+  const int max_iters = 5;
+  size_t prev_violations = countConstraintViolations(partitioned_hg, context);
+  for (int iter = 0; iter < max_iters; ++iter) {
+    descendingConstraintDegree(partitioned_hg, gain_cache);
+    size_t cur_violations = countConstraintViolations(partitioned_hg, context);
+    LOG << "postprocessing iter=" << iter << " violations=" << cur_violations;
+    if (cur_violations == 0) break;
+    if (cur_violations >= prev_violations) break; // no improvement, stop
+    prev_violations = cur_violations;
+  }
 
   // No fixing of nodes: postprocessing performs local moves to resolve
   // negative constraints and we no longer invoke the rebalancer/refinement
