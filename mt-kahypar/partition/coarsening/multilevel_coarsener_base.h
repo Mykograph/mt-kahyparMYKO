@@ -104,7 +104,7 @@ class MultilevelCoarsenerBase {
 
           for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
             if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
-              float partial_sum= _hg.edgeWeight(incident_he) * 10 ;
+              float partial_sum= _hg.edgeWeight(incident_he) * multiplier; ;
               if(_context.heuristicEdgeSize){
                 partial_sum *= (multiplier2 / _hg.edgeSize(incident_he));}
               accumulator += partial_sum;
@@ -120,6 +120,8 @@ class MultilevelCoarsenerBase {
         if((-new_weight * _context.tuning_parameter) > _hhg.edgeWeight(he)){
           _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
         }
+      } else {
+        _hhg.setEdgeWeight(he, _hg.edgeWeight(he)*multiplier);
       }
     }
 }

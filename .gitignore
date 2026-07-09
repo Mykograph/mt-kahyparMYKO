@@ -18,6 +18,7 @@ build-h-blum/*
 build-h-backus/*
 build-h-liskow/*
 build-blum/*
+build-emil/*
 build-cook-postProc/*
 build-cook/*
 build-feigenbaum/*
