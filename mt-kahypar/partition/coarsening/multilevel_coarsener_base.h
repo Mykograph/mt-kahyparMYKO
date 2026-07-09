@@ -88,44 +88,70 @@ class MultilevelCoarsenerBase {
     }
   }
 
-  void heuristicHypergraph() {
-    //multiplier supposed to prevent rounding when multiplying with tuning parameter, which is between 0 and 1
-    int multiplier = 10;
-    int multiplier2 = 100;
-    // modify every negative edge, set it to:
-    //nodes in edge * the weight of their incident edges (except the negative one) 
-    for (const HyperedgeID he : _hg.edges()) {
-      _hhg.setEdgeWeight(he, _hg.edgeWeight(he)*multiplier);
-      if (_hg.edgeWeight(he) < 0) {
-        HyperedgeWeight new_weight =  INT32_MAX;
-        HypernodeID pinNr=0;
-        for (const HypernodeID pin : _hg.pins(he)) {
-          HyperedgeWeight accumulator = 0;
+ void heuristicHypergraph() {
+  // multiplier keeps enough precision when later multiplying by tuning_parameter (in [0,1])
+  // before we round back down to an integral HyperedgeWeight.
+  constexpr double multiplier = 10.0;
+  constexpr double multiplier2 = 100.0;
 
-          for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
-            if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
-              float partial_sum= _hg.edgeWeight(incident_he) * multiplier; 
+  for (const HyperedgeID he : _hg.edges()) {
+    // Baseline: every edge is scaled by `multiplier` exactly once. This is the
+    // one true "current scale" for _hhg — negative edges below either keep
+    // this value or replace it, but never get multiplier applied a second time.
+    const double scaled_original = _hg.edgeWeight(he) * multiplier;
 
-              if(_context.heuristicEdgeSize){
-                partial_sum *= (multiplier2 / _hg.edgeSize(incident_he));}
+    if (_hg.edgeWeight(he) >= 0) {
+      _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(scaled_original)));
+      continue;
+    }
 
-              accumulator += partial_sum;
-            }
-            
+    // Negative edge: find the pin with the least positive support from its
+    // *other* incident edges, and use that as an upper bound (in magnitude)
+    // for how negative this edge is allowed to be.
+    double weakest_pin_support = std::numeric_limits<double>::max();
+    bool found_any_pin_with_support = false;
+
+    for (const HypernodeID pin : _hg.pins(he)) {
+      double accumulator = 0.0;
+      bool pin_has_support = false;
+
+      for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
+        if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
+          double partial_sum = _hg.edgeWeight(incident_he) * multiplier;
+          if (_context.heuristicEdgeSize) {
+            // Real float ratio now, not integer division truncated to 0/1/2/...
+            partial_sum *= (multiplier2 / static_cast<double>(_hg.edgeSize(incident_he)));
           }
-          if (accumulator < new_weight) {
-            new_weight = accumulator;
-            pinNr = pin;
-          }
+          accumulator += partial_sum;
+          pin_has_support = true;
         }
-        //Setting negative edge weight times the tuning parameter
-        if((-new_weight * _context.tuning_parameter) > _hhg.edgeWeight(he)*multiplier){
-          _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
-        }
-      } else {
-        _hhg.setEdgeWeight(he, _hg.edgeWeight(he)*multiplier);
+      }
+
+      if (pin_has_support && accumulator < weakest_pin_support) {
+        weakest_pin_support = accumulator;
+        found_any_pin_with_support = true;
       }
     }
+
+    // If literally no pin has any positive support, there's nothing to bound
+    // the negative edge by — fall back to leaving it at its original (scaled)
+    // value rather than silently zeroing it out.
+    if (!found_any_pin_with_support) {
+      _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(scaled_original)));
+      continue;
+    }
+
+    const double candidate = -weakest_pin_support * _context.tuning_parameter;
+
+    // Both sides are now on the exact same scale (one factor of `multiplier`),
+    // so this comparison is meaningful: "is the heuristic-bounded value less
+    // negative (i.e. bigger) than the original scaled weight?"
+    if (candidate > scaled_original) {
+      _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(candidate)));
+    } else {
+      _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(scaled_original)));
+    }
+  }
 }
 
   PartitionedHypergraph& currentPartitionedHypergraph() {
