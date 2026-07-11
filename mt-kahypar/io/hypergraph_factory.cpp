@@ -39,6 +39,8 @@
 namespace mt_kahypar {
 namespace io {
 
+// OriginalEdgeSnapshot is declared in hypergraph_factory.h
+
 namespace {
 
 template<typename Hypergraph>
@@ -147,7 +149,6 @@ struct ConstraintPairHash {
 };
 
 // Overload for HyperedgeVector (hypergraph case) — edges accessed via edge[0], edge[1]
-// Does NOT output constraints; used when no constraint graph is needed.
 void applyConstraintPairs(const std::string& constraint_filename,
                           const HyperedgeWeight constraint_weight,
                           const HypernodeID num_nodes,
@@ -273,7 +274,8 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                                        const bool remove_single_pin_hes,
                                        const bool print_warnings,
                                        const std::string& constraint_filename,
-                                       const HyperedgeWeight constraint_weight) {
+                                       const HyperedgeWeight constraint_weight,
+                                       OriginalEdgeSnapshot* out_snapshot = nullptr) {
   HyperedgeID num_hyperedges = 0;
   HypernodeID num_hypernodes = 0;
   HyperedgeID num_removed_single_pin_hyperedges = 0;
@@ -283,6 +285,14 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
   readHypergraphFile(filename, num_hyperedges, num_hypernodes,
                      num_removed_single_pin_hyperedges, hyperedges,
                      hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
+
+  // Snapshot BEFORE the constraint pass mutates weights or appends edges.
+  if (out_snapshot) {
+    out_snapshot->is_graph = false;
+    out_snapshot->valid = true;
+    out_snapshot->original_hyperedges = hyperedges;          // deep copy
+    out_snapshot->original_edge_weights = hyperedges_weight; // deep copy
+  }
 
   vec<std::pair<HypernodeID, HypernodeID>> constraints;
   applyConstraintPairs(constraint_filename, constraint_weight, num_hypernodes,
@@ -310,7 +320,8 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
                                       const bool stable_construction,
                                       const bool,
                                       const std::string& constraint_filename,
-                                      const HyperedgeWeight constraint_weight) {
+                                      const HyperedgeWeight constraint_weight,
+                                      OriginalEdgeSnapshot* out_snapshot = nullptr) {
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
   vec<HyperedgeWeight> edges_weight;
@@ -320,6 +331,15 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
     EdgeVector edges;
     vec<std::pair<HypernodeID, HypernodeID>> constraints;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+
+    // Snapshot BEFORE the constraint pass mutates weights or appends edges.
+    if (out_snapshot) {
+      out_snapshot->is_graph = true;
+      out_snapshot->valid = true;
+      out_snapshot->original_edges = edges;               // deep copy
+      out_snapshot->original_edge_weights = edges_weight; // deep copy
+    }
+
     applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
                          num_edges, edges, edges_weight, &constraints);
     mt_kahypar_hypergraph_t hg = constructGraph(type, num_vertices, num_edges, edges,
@@ -337,6 +357,15 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
   } else {
     HyperedgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+
+    // Snapshot BEFORE the constraint pass mutates weights or appends edges.
+    if (out_snapshot) {
+      out_snapshot->is_graph = false;
+      out_snapshot->valid = true;
+      out_snapshot->original_hyperedges = edges;          // deep copy
+      out_snapshot->original_edge_weights = edges_weight; // deep copy
+    }
+
     applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
                          num_edges, edges, edges_weight);
     return constructHypergraph(type, num_vertices, num_edges, edges,
@@ -354,13 +383,16 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const bool remove_single_pin_hes,
                                       const bool print_warnings,
                                       const std::string& constraint_filename,
-                                      const HyperedgeWeight constraint_weight) {
+                                      const HyperedgeWeight constraint_weight,
+                                      OriginalEdgeSnapshot* out_snapshot) {
   mt_kahypar_hypergraph_type_t type = to_hypergraph_c_type(preset, instance);
   switch ( format ) {
     case FileFormat::hMetis: return readHMetisFile(
-      filename, type, stable_construction, remove_single_pin_hes, print_warnings, constraint_filename, constraint_weight);
+      filename, type, stable_construction, remove_single_pin_hes, print_warnings,
+      constraint_filename, constraint_weight, out_snapshot);
     case FileFormat::Metis: return readMetisFile(
-      filename, type, stable_construction, print_warnings, constraint_filename, constraint_weight);
+      filename, type, stable_construction, print_warnings,
+      constraint_filename, constraint_weight, out_snapshot);
   }
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
@@ -372,16 +404,68 @@ Hypergraph readInputFile(const std::string& filename,
                          const bool remove_single_pin_hes,
                          const bool print_warnings,
                          const std::string& constraint_filename,
-                         const HyperedgeWeight constraint_weight) {
+                         const HyperedgeWeight constraint_weight,
+                         OriginalEdgeSnapshot* out_snapshot) {
   mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
   switch ( format ) {
     case FileFormat::hMetis: hypergraph = readHMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings, constraint_filename, constraint_weight);
+      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings,
+      constraint_filename, constraint_weight, out_snapshot);
       break;
     case FileFormat::Metis: hypergraph = readMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, print_warnings, constraint_filename, constraint_weight);
+      filename, Hypergraph::TYPE, stable_construction, print_warnings,
+      constraint_filename, constraint_weight, out_snapshot);
   }
   return std::move(utils::cast<Hypergraph>(hypergraph));
+}
+
+// ----------------------------------------------------------------------------
+// Cut counting against the ORIGINAL (un-tampered) edge set captured in the
+// snapshot. `part_id` must map HypernodeID -> PartitionID for the final
+// partition (the same node IDs are used before and after the constraint
+// pass, since constraints only add edges / change weights, never nodes).
+// ----------------------------------------------------------------------------
+
+HyperedgeWeight countOriginalCutHyperedges(const HyperedgeVector& original_hyperedges,
+                                           const vec<HyperedgeWeight>& original_weights,
+                                           const vec<PartitionID>& part_id) {
+  HyperedgeWeight cut = 0;
+  for (size_t he = 0; he < original_hyperedges.size(); ++he) {
+    const auto& pins = original_hyperedges[he];
+    if (pins.empty()) continue;
+    const PartitionID first_block = part_id[pins[0]];
+    for (const HypernodeID pin : pins) {
+      if (part_id[pin] != first_block) {
+        cut += original_weights[he];
+        break;
+      }
+    }
+  }
+  return cut;
+}
+
+HyperedgeWeight countOriginalCutEdges(const EdgeVector& original_edges,
+                                      const vec<HyperedgeWeight>& original_weights,
+                                      const vec<PartitionID>& part_id) {
+  HyperedgeWeight cut = 0;
+  for (size_t e = 0; e < original_edges.size(); ++e) {
+    if (part_id[original_edges[e].first] != part_id[original_edges[e].second]) {
+      cut += original_weights[e];
+    }
+  }
+  return cut;
+}
+
+HyperedgeWeight countOriginalCut(const OriginalEdgeSnapshot& snapshot,
+                                 const vec<PartitionID>& part_id) {
+  if (!snapshot.valid) {
+    throw InvalidInputException("Attempted to count cut on an empty/uninitialized OriginalEdgeSnapshot");
+  }
+  if (snapshot.is_graph) {
+    return countOriginalCutEdges(snapshot.original_edges, snapshot.original_edge_weights, part_id);
+  } else {
+    return countOriginalCutHyperedges(snapshot.original_hyperedges, snapshot.original_edge_weights, part_id);
+  }
 }
 
 namespace {
@@ -471,7 +555,8 @@ template ds::StaticHypergraph readInputFile(const std::string& filename,
                                             const bool remove_single_pin_hes,
                                             const bool logging,
                                             const std::string& constraint_filename,
-                                            const HyperedgeWeight constraint_weight);
+                                            const HyperedgeWeight constraint_weight,
+                                            OriginalEdgeSnapshot* out_snapshot);
 
 ENABLE_GRAPHS(template ds::StaticGraph readInputFile(const std::string& filename,
                                                      const FileFormat& format,
@@ -479,7 +564,8 @@ ENABLE_GRAPHS(template ds::StaticGraph readInputFile(const std::string& filename
                                                      const bool remove_single_pin_hes,
                                                      const bool logging,
                                                      const std::string& constraint_filename,
-                                                     const HyperedgeWeight constraint_weight);)
+                                                     const HyperedgeWeight constraint_weight,
+                                                     OriginalEdgeSnapshot* out_snapshot);)
 
 ENABLE_HIGHEST_QUALITY(template ds::DynamicHypergraph readInputFile(const std::string& filename,
                                                                     const FileFormat& format,
@@ -487,7 +573,8 @@ ENABLE_HIGHEST_QUALITY(template ds::DynamicHypergraph readInputFile(const std::s
                                                                     const bool remove_single_pin_hes,
                                                                     const bool logging,
                                                                     const std::string& constraint_filename,
-                                                                    const HyperedgeWeight constraint_weight);)
+                                                                    const HyperedgeWeight constraint_weight,
+                                                                    OriginalEdgeSnapshot* out_snapshot);)
 
 ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template ds::DynamicGraph readInputFile(const std::string& filename,
                                                                           const FileFormat& format,
@@ -495,7 +582,8 @@ ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template ds::DynamicGraph readInputFile(const 
                                                                           const bool remove_single_pin_hes,
                                                                           const bool logging,
                                                                           const std::string& constraint_filename,
-                                                                          const HyperedgeWeight constraint_weight);)
+                                                                          const HyperedgeWeight constraint_weight,
+                                                                          OriginalEdgeSnapshot* out_snapshot);)
 
 #ifndef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
 template ds::StaticGraph readInputFile(const std::string& filename,
@@ -504,7 +592,8 @@ template ds::StaticGraph readInputFile(const std::string& filename,
                                        const bool remove_single_pin_hes,
                                        const bool logging,
                                        const std::string& constraint_filename,
-                                       const HyperedgeWeight constraint_weight);
+                                       const HyperedgeWeight constraint_weight,
+                                       OriginalEdgeSnapshot* out_snapshot);
 #endif
 
 }  // namespace io

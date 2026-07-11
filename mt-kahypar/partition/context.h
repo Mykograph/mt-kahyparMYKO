@@ -35,6 +35,7 @@
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
+#include "mt-kahypar/io/hypergraph_factory.h"
 
 namespace mt_kahypar {
 
@@ -299,6 +300,12 @@ class Context {
   bool postProcessing = false;
 
   int violated_constraints = 0;
+
+  // Snapshot of the original (un-tampered) edge set captured by
+  // io::readInputFile before constraint pairs reweight/append edges.
+  // Populated by whoever calls readInputFile with constraints enabled;
+  // used by the serializer to report the cut on the original instance.
+  io::OriginalEdgeSnapshot original_edge_snapshot { };
 
   Context(const bool register_utilities = true);
 

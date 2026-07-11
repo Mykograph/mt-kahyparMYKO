@@ -32,6 +32,7 @@
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
+#include "mt-kahypar/io/hypergraph_factory.h"
 #include "mt-kahypar/utils/utilities.h"
 #include "mt-kahypar/utils/timer.h"
 
@@ -208,6 +209,19 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
     }
     oss << " positive_cut_edges=" << metrics::positive_cut_edges(hypergraph, true);
     oss << " negative_cut_edges=" << metrics::negative_cut_edges(hypergraph, true);
+
+    // Cut on the ORIGINAL (un-tampered) edge set, i.e. ignoring any edges
+    // that were reweighted or synthetically added by the constraint pass.
+    // Only available if readInputFile(...) was called with a snapshot
+    // pointer and populated context.original_edge_snapshot.
+    if ( context.original_edge_snapshot.valid ) {
+      vec<PartitionID> part_id(hypergraph.initialNumNodes());
+      hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+        part_id[hn] = hypergraph.partID(hn);
+      });
+      oss << " original_cut=" << io::countOriginalCut(context.original_edge_snapshot, part_id);
+    }
+
     oss << " coarsened_nodes=" << context.coarsened_num_nodes;   
     oss << " coarsened_edges=" << context.coarsened_num_edges;
     oss << " num_violated_constraints=" << context.violated_constraints;

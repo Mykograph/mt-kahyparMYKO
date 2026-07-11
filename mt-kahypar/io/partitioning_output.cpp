@@ -40,6 +40,7 @@
 #include "mt-kahypar/parallel/atomic_wrapper.h"
 #include "mt-kahypar/partition/metrics.h"
 #include "mt-kahypar/partition/mapping/target_graph.h"
+#include "mt-kahypar/io/hypergraph_factory.h"
 #include "mt-kahypar/utils/hypergraph_statistics.h"
 #include "mt-kahypar/utils/memory_tree.h"
 #include "mt-kahypar/utils/timer.h"
@@ -472,6 +473,17 @@ namespace mt_kahypar::io {
     printKeyValue("Partitioning Time", std::to_string(elapsed_seconds.count()) + " s");
     printKeyValue("Positive Cut Edges", metrics::positive_cut_edges(hypergraph, true));
     printKeyValue("Negative Cut Edges", metrics::negative_cut_edges(hypergraph, true));
+    // Cut on the ORIGINAL (un-tampered) edge set, i.e. ignoring any edges
+    // that were reweighted or synthetically added by the constraint pass.
+    // Only available if readInputFile(...) was called with a snapshot
+    // pointer and populated context.original_edge_snapshot (see mt_kahypar.cc).
+    if ( context.original_edge_snapshot.valid ) {
+      vec<PartitionID> part_id(hypergraph.initialNumNodes());
+      hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
+        part_id[hn] = hypergraph.partID(hn);
+      });
+      printKeyValue("Original Cut", io::countOriginalCut(context.original_edge_snapshot, part_id));
+    }
     printKeyValue("Coarsened Nodes", context.coarsened_num_nodes);
     printKeyValue("Coarsened Edges", context.coarsened_num_edges);
     printKeyValue("Violated Constraints", context.violated_constraints);

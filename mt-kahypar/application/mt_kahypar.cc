@@ -165,13 +165,20 @@ std::cout << "Constraint weight: " << context.partition.constraint_weight << std
   utils::Timer& timer =
     utils::Utilities::instance().getTimer(context.utility_id);
   timer.start_timer("io_hypergraph", "I/O Hypergraph");
+  // Snapshot of the original (un-tampered) edge set, captured before the
+  // constraint pass reweights existing edges or appends synthetic ones.
+  // Stored on the context so it survives through partitioning and is
+  // available later for cut reporting (console output / serializer).
+  io::OriginalEdgeSnapshot original_edge_snapshot;
   mt_kahypar_hypergraph_t hypergraph = io::readInputFile(
       context.partition.graph_filename, context.partition.preset_type,
       context.partition.instance_type, context.partition.file_format,
       context.preprocessing.stable_construction_of_incident_edges,
       /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
       context.partition.constraint_filename,
-      context.partition.constraint_weight);
+      context.partition.constraint_weight,
+      &original_edge_snapshot);
+  context.original_edge_snapshot = std::move(original_edge_snapshot);
   timer.stop_timer("io_hypergraph");
 
   // Read Target Graph
