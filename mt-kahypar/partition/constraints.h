@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem> // Added for directory inspection and path manipulation
 #include "mt-kahypar/io/hypergraph_io.h"
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/factories.h"
@@ -17,8 +18,36 @@ using PQ = ds::Heap<Key, HypernodeID, Comparator, arity>;
 
 template<typename PartitionedHypergraph>
 bool verifyConstraints(const PartitionedHypergraph& partitioned_hg, const Context& context) {
+  std::string constraints_file = context.partition.negative_constraints_filename;
+  namespace fs = std::filesystem;
+
+  // Check if the configured constraint path is actually a directory
+  if (fs::exists(constraints_file) && fs::is_directory(constraints_file)) {
+    // Extract the base file name of the graph (e.g., "my_graph" from "/path/to/my_graph.hgr")
+    std::string graph_base_name = fs::path(context.partition.graph_filename).stem().string();
+    bool file_found = false;
+
+    // Search the directory for a file that starts with the graph's base name
+    for (const auto& entry : fs::directory_iterator(constraints_file)) {
+      if (entry.is_regular_file()) {
+        std::string filename = entry.path().filename().string();
+        // Check if the filename starts with the graph_base_name
+        if (filename.rfind(graph_base_name, 0) == 0) {
+          constraints_file = entry.path().string();
+          file_found = true;
+          break;
+        }
+      }
+    }
+
+    if (!file_found) {
+      // Fallback or error handling if no matching constraint file is present in the directory
+      LOG << "Warning: Constraints directory provided, but no file matches graph prefix: " << graph_base_name;
+    }
+  }
+
   vec<std::pair<HypernodeID, HypernodeID>> constraints;
-  io::readNegativeConstraintsFile(context.partition.negative_constraints_filename, constraints);
+  io::readNegativeConstraintsFile(constraints_file, constraints);
   for (std::pair<HypernodeID, HypernodeID> constraint : constraints) {
     if (partitioned_hg.partID(constraint.first) == partitioned_hg.partID(constraint.second)) {
       return false;
