@@ -277,6 +277,11 @@ namespace mt_kahypar {
       "Weight assigned to constraint edges."
     )->capture_default_str();
     app.add_option(
+      "--normal-edge-weight-bonus",
+      context.normal_edge_weight_bonus,
+      "Value x added to the weight of every normal (non-constraint) edge."
+    )->capture_default_str();
+    app.add_option(
       "--post-processing",
       context.postProcessing,
       "If true, performs a post-processing step after partitioning to fix violated constraints"

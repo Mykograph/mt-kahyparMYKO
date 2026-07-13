@@ -56,6 +56,7 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const bool print_warnings,
                                       const std::string& constraint_filename = "",
                                       const HyperedgeWeight constraint_weight = -100,
+                                      const HyperedgeWeight normal_edge_weight_bonus = 0,
                                       OriginalEdgeSnapshot* out_snapshot = nullptr);
 
 template<typename Hypergraph>
@@ -66,6 +67,7 @@ Hypergraph readInputFile(const std::string& filename,
                          const bool print_warnings,
                          const std::string& constraint_filename = "",
                          const HyperedgeWeight constraint_weight = -100,
+                         const HyperedgeWeight normal_edge_weight_bonus = 0,
                          OriginalEdgeSnapshot* out_snapshot = nullptr);
 
 // Counts the (weighted) cut on the original hyperedge set captured in a

@@ -118,6 +118,7 @@ int main(int argc, char* argv[]) {
   // In main.cpp, after processCommandLineInput:
 std::cout << "Constraint filename: '" << context.partition.constraint_filename << "'" << std::endl;
 std::cout << "Constraint weight: " << context.partition.constraint_weight << std::endl;
+std::cout << "Normal edge weight bonus: " << context.normal_edge_weight_bonus << std::endl;
 
   if ( context.partition.preset_type == PresetType::UNDEFINED ) {
     ERR("No preset specified (--preset-type)");
@@ -177,6 +178,7 @@ std::cout << "Constraint weight: " << context.partition.constraint_weight << std
       /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
       context.partition.constraint_filename,
       context.partition.constraint_weight,
+      context.normal_edge_weight_bonus,
       &original_edge_snapshot);
   context.original_edge_snapshot = std::move(original_edge_snapshot);
   timer.stop_timer("io_hypergraph");
@@ -188,7 +190,8 @@ std::cout << "Constraint weight: " << context.partition.constraint_weight << std
       target_graph = std::make_unique<TargetGraph>(
         io::readInputFile<ds::StaticGraph>(
           context.mapping.target_graph_file, FileFormat::Metis,
-          /*stable_construnction=*/true, /*remove_single_pin_hes=*/true, /*print_warnings=*/true));
+          /*stable_construnction=*/true, /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
+          /*constraint_filename=*/"", /*constraint_weight=*/0, /*normal_edge_weight_bonus=*/0));
     } else {
       throw InvalidInputException("No target graph file specified (use -g <file> or --target-graph=<file>)!");
     }

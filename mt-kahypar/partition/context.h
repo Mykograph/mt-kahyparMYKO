@@ -300,6 +300,7 @@ class Context {
   bool postProcessing = false;
 
   int violated_constraints = 0;
+  HyperedgeWeight normal_edge_weight_bonus = 0;
 
   // Snapshot of the original (un-tampered) edge set captured by
   // io::readInputFile before constraint pairs reweight/append edges.

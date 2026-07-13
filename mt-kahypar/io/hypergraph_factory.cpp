@@ -149,14 +149,27 @@ struct ConstraintPairHash {
 };
 
 // Overload for HyperedgeVector (hypergraph case) — edges accessed via edge[0], edge[1]
+//
+// `normal_edge_weight_bonus` (x) is added to every edge weight that is NOT an
+// anti-constraint edge (i.e. every "normal" edge), whether it was already
+// present in the input or newly appended by a later constraint pass call.
 void applyConstraintPairs(const std::string& constraint_filename,
                           const HyperedgeWeight constraint_weight,
                           const HypernodeID num_nodes,
                           HyperedgeID& num_edges,
                           HyperedgeVector& edges,
                           vec<HyperedgeWeight>& edge_weight,
+                          const HyperedgeWeight normal_edge_weight_bonus = 0,
                           vec<std::pair<HypernodeID, HypernodeID>>* out_constraints = nullptr) {
-  if (constraint_filename.empty()) return;
+  if (constraint_filename.empty()) {
+    // No constraints to apply, but the normal-edge bonus still applies to all edges.
+    if (normal_edge_weight_bonus != 0) {
+      for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
+    }
+    return;
+  }
 
   std::ifstream file(constraint_filename);
   if (!file) throw InvalidInputException("File not found: " + constraint_filename);
@@ -176,7 +189,14 @@ void applyConstraintPairs(const std::string& constraint_filename,
     constraints.emplace_back(hu, hv);
   }
 
-  if (constraints.empty()) return;
+  if (constraints.empty()) {
+    if (normal_edge_weight_bonus != 0) {
+      for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
+    }
+    return;
+  }
 
   std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
   edge_map.reserve(edges.size());
@@ -188,10 +208,17 @@ void applyConstraintPairs(const std::string& constraint_filename,
     edge_map[{eu, ev}].push_back(he);
   }
 
+  // Track which edge indices are anti-constraint edges so the normal-edge
+  // bonus below can skip them.
+  vec<bool> is_constraint_edge(edges.size(), false);
+
   for (const auto& constraint : constraints) {
     auto it = edge_map.find(constraint);
     if (it != edge_map.end()) {
-      for (const HyperedgeID he : it->second) edge_weight[he] = constraint_weight;
+      for (const HyperedgeID he : it->second) {
+        edge_weight[he] = constraint_weight;
+        is_constraint_edge[he] = true;
+      }
     } else {
       edges.emplace_back();
       auto& new_edge = edges.back();
@@ -199,8 +226,18 @@ void applyConstraintPairs(const std::string& constraint_filename,
       new_edge.push_back(constraint.first);
       new_edge.push_back(constraint.second);
       edge_weight.push_back(constraint_weight);
+      is_constraint_edge.push_back(true);
       edge_map[constraint].push_back(static_cast<HyperedgeID>(edges.size() - 1));
       ++num_edges;
+    }
+  }
+
+  // Add the preset bonus x to every edge that is NOT an anti-constraint edge.
+  if (normal_edge_weight_bonus != 0) {
+    for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+      if (!is_constraint_edge[he]) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
     }
   }
 
@@ -208,14 +245,26 @@ void applyConstraintPairs(const std::string& constraint_filename,
 }
 
 // Overload for EdgeVector (graph case) — edges accessed via .first, .second
+//
+// `normal_edge_weight_bonus` (x) is added to every edge weight that is NOT an
+// anti-constraint edge (i.e. every "normal" edge), whether it was already
+// present in the input or newly appended by a later constraint pass call.
 void applyConstraintPairs(const std::string& constraint_filename,
                           const HyperedgeWeight constraint_weight,
                           const HypernodeID num_nodes,
                           HyperedgeID& num_edges,
                           EdgeVector& edges,
                           vec<HyperedgeWeight>& edge_weight,
+                          const HyperedgeWeight normal_edge_weight_bonus = 0,
                           vec<std::pair<HypernodeID, HypernodeID>>* out_constraints = nullptr) {
-  if (constraint_filename.empty()) return;
+  if (constraint_filename.empty()) {
+    if (normal_edge_weight_bonus != 0) {
+      for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
+    }
+    return;
+  }
 
   std::ifstream file(constraint_filename);
   if (!file) throw InvalidInputException("File not found: " + constraint_filename);
@@ -235,7 +284,14 @@ void applyConstraintPairs(const std::string& constraint_filename,
     constraints.emplace_back(hu, hv);
   }
 
-  if (constraints.empty()) return;
+  if (constraints.empty()) {
+    if (normal_edge_weight_bonus != 0) {
+      for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
+    }
+    return;
+  }
 
   std::unordered_map<std::pair<HypernodeID, HypernodeID>, vec<HyperedgeID>, ConstraintPairHash> edge_map;
   edge_map.reserve(edges.size());
@@ -245,15 +301,29 @@ void applyConstraintPairs(const std::string& constraint_filename,
     edge_map[{eu, ev}].push_back(he);
   }
 
+  vec<bool> is_constraint_edge(edges.size(), false);
+
   for (const auto& constraint : constraints) {
     auto it = edge_map.find(constraint);
     if (it != edge_map.end()) {
-      for (const HyperedgeID he : it->second) edge_weight[he] = constraint_weight;
+      for (const HyperedgeID he : it->second) {
+        edge_weight[he] = constraint_weight;
+        is_constraint_edge[he] = true;
+      }
     } else {
       edges.emplace_back(constraint.first, constraint.second);
       edge_weight.push_back(constraint_weight);
+      is_constraint_edge.push_back(true);
       edge_map[constraint].push_back(static_cast<HyperedgeID>(edges.size() - 1));
       ++num_edges;
+    }
+  }
+
+  if (normal_edge_weight_bonus != 0) {
+    for (HyperedgeID he = 0; he < static_cast<HyperedgeID>(edge_weight.size()); ++he) {
+      if (!is_constraint_edge[he]) {
+        edge_weight[he] += normal_edge_weight_bonus;
+      }
     }
   }
 
@@ -275,6 +345,7 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                                        const bool print_warnings,
                                        const std::string& constraint_filename,
                                        const HyperedgeWeight constraint_weight,
+                                       const HyperedgeWeight normal_edge_weight_bonus = 0,
                                        OriginalEdgeSnapshot* out_snapshot = nullptr) {
   HyperedgeID num_hyperedges = 0;
   HypernodeID num_hypernodes = 0;
@@ -296,7 +367,8 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
 
   vec<std::pair<HypernodeID, HypernodeID>> constraints;
   applyConstraintPairs(constraint_filename, constraint_weight, num_hypernodes,
-                       num_hyperedges, hyperedges, hyperedges_weight, &constraints);
+                       num_hyperedges, hyperedges, hyperedges_weight,
+                       normal_edge_weight_bonus, &constraints);
 
   mt_kahypar_hypergraph_t hg = constructHypergraph(type, num_hypernodes, num_hyperedges,
                                                     hyperedges, hyperedges_weight,
@@ -321,6 +393,7 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
                                       const bool,
                                       const std::string& constraint_filename,
                                       const HyperedgeWeight constraint_weight,
+                                      const HyperedgeWeight normal_edge_weight_bonus = 0,
                                       OriginalEdgeSnapshot* out_snapshot = nullptr) {
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
@@ -341,7 +414,8 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
     }
 
     applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
-                         num_edges, edges, edges_weight, &constraints);
+                         num_edges, edges, edges_weight,
+                         normal_edge_weight_bonus, &constraints);
     mt_kahypar_hypergraph_t hg = constructGraph(type, num_vertices, num_edges, edges,
                                                 edges_weight, nodes_weight, stable_construction);
     if (!constraints.empty()) {
@@ -367,7 +441,7 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
     }
 
     applyConstraintPairs(constraint_filename, constraint_weight, num_vertices,
-                         num_edges, edges, edges_weight);
+                         num_edges, edges, edges_weight, normal_edge_weight_bonus);
     return constructHypergraph(type, num_vertices, num_edges, edges,
                                edges_weight, nodes_weight, 0, stable_construction);
   }
@@ -384,15 +458,16 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const bool print_warnings,
                                       const std::string& constraint_filename,
                                       const HyperedgeWeight constraint_weight,
+                                      const HyperedgeWeight normal_edge_weight_bonus,
                                       OriginalEdgeSnapshot* out_snapshot) {
   mt_kahypar_hypergraph_type_t type = to_hypergraph_c_type(preset, instance);
   switch ( format ) {
     case FileFormat::hMetis: return readHMetisFile(
       filename, type, stable_construction, remove_single_pin_hes, print_warnings,
-      constraint_filename, constraint_weight, out_snapshot);
+      constraint_filename, constraint_weight, normal_edge_weight_bonus, out_snapshot);
     case FileFormat::Metis: return readMetisFile(
       filename, type, stable_construction, print_warnings,
-      constraint_filename, constraint_weight, out_snapshot);
+      constraint_filename, constraint_weight, normal_edge_weight_bonus, out_snapshot);
   }
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
@@ -405,16 +480,17 @@ Hypergraph readInputFile(const std::string& filename,
                          const bool print_warnings,
                          const std::string& constraint_filename,
                          const HyperedgeWeight constraint_weight,
+                         const HyperedgeWeight normal_edge_weight_bonus,
                          OriginalEdgeSnapshot* out_snapshot) {
   mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
   switch ( format ) {
     case FileFormat::hMetis: hypergraph = readHMetisFile(
       filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings,
-      constraint_filename, constraint_weight, out_snapshot);
+      constraint_filename, constraint_weight, normal_edge_weight_bonus, out_snapshot);
       break;
     case FileFormat::Metis: hypergraph = readMetisFile(
       filename, Hypergraph::TYPE, stable_construction, print_warnings,
-      constraint_filename, constraint_weight, out_snapshot);
+      constraint_filename, constraint_weight, normal_edge_weight_bonus, out_snapshot);
   }
   return std::move(utils::cast<Hypergraph>(hypergraph));
 }
@@ -556,6 +632,7 @@ template ds::StaticHypergraph readInputFile(const std::string& filename,
                                             const bool logging,
                                             const std::string& constraint_filename,
                                             const HyperedgeWeight constraint_weight,
+                                            const HyperedgeWeight normal_edge_weight_bonus,
                                             OriginalEdgeSnapshot* out_snapshot);
 
 ENABLE_GRAPHS(template ds::StaticGraph readInputFile(const std::string& filename,
@@ -565,6 +642,7 @@ ENABLE_GRAPHS(template ds::StaticGraph readInputFile(const std::string& filename
                                                      const bool logging,
                                                      const std::string& constraint_filename,
                                                      const HyperedgeWeight constraint_weight,
+                                                     const HyperedgeWeight normal_edge_weight_bonus,
                                                      OriginalEdgeSnapshot* out_snapshot);)
 
 ENABLE_HIGHEST_QUALITY(template ds::DynamicHypergraph readInputFile(const std::string& filename,
@@ -574,6 +652,7 @@ ENABLE_HIGHEST_QUALITY(template ds::DynamicHypergraph readInputFile(const std::s
                                                                     const bool logging,
                                                                     const std::string& constraint_filename,
                                                                     const HyperedgeWeight constraint_weight,
+                                                                    const HyperedgeWeight normal_edge_weight_bonus,
                                                                     OriginalEdgeSnapshot* out_snapshot);)
 
 ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template ds::DynamicGraph readInputFile(const std::string& filename,
@@ -583,6 +662,7 @@ ENABLE_HIGHEST_QUALITY_FOR_GRAPHS(template ds::DynamicGraph readInputFile(const 
                                                                           const bool logging,
                                                                           const std::string& constraint_filename,
                                                                           const HyperedgeWeight constraint_weight,
+                                                                          const HyperedgeWeight normal_edge_weight_bonus,
                                                                           OriginalEdgeSnapshot* out_snapshot);)
 
 #ifndef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
@@ -593,6 +673,7 @@ template ds::StaticGraph readInputFile(const std::string& filename,
                                        const bool logging,
                                        const std::string& constraint_filename,
                                        const HyperedgeWeight constraint_weight,
+                                       const HyperedgeWeight normal_edge_weight_bonus,
                                        OriginalEdgeSnapshot* out_snapshot);
 #endif
 
