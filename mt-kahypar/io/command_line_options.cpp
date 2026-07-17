@@ -1234,29 +1234,54 @@ namespace mt_kahypar {
         throw InvalidInputException("Constraint folder does not exist or is not a directory: " + context.partition.constraint_folder);
       }
 
-      // Extract graph basename without extension (e.g., "graph" from "graph.hgr")
-      fs::path graph_path(context.partition.graph_filename);
-      std::string base = graph_path.stem().string();
+      // Extract the graph name up to and including ".hgr" if present,
+      // otherwise use the stem (filename without extension).
+      std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
+      std::string base;
+      size_t hgr_pos = graph_filename.find(".hgr");
+      if (hgr_pos != std::string::npos) {
+        // include ".hgr" in the base
+        base = graph_filename.substr(0, hgr_pos + 4);
+      } else {
+        // fallback: use the stem (no extension)
+        base = fs::path(context.partition.graph_filename).stem().string();
+      }
 
+      // We want to find a file that starts with 'base' and, if possible, contains the K value.
+      // This handles files named like "graph.hgr.16.constraints.txt" or "graph.hgr.constraints.txt"
+      std::string k_str = "." + std::to_string(context.partition.k) + ".";
       std::string found_file;
+      bool found_with_k = false;
+
       for (const auto& entry : fs::directory_iterator(folder)) {
         if (entry.is_regular_file()) {
-          std::string stem = entry.path().stem().string(); // name without extension
-          if (stem == base) {
-            if (!found_file.empty()) {
-              throw InvalidInputException(
-                "Multiple constraint files found for graph basename '" + base +
-                "' in folder '" + context.partition.constraint_folder +
-                "'. Please specify explicitly using --constraint-file.");
+          std::string filename = entry.path().filename().string();
+          if (filename.find(base) == 0) { // starts with base
+            if (filename.find(k_str) != std::string::npos) {
+              // Prefer file that contains the K value
+              if (!found_with_k) {
+                found_file = entry.path().string();
+                found_with_k = true;
+              } else {
+                // Already have one with K -> ambiguous
+                throw InvalidInputException(
+                  "Multiple constraint files with K=" + std::to_string(context.partition.k) +
+                  " found for graph base '" + base + "' in folder '" + context.partition.constraint_folder +
+                  "'. Please specify explicitly using --constraint-file.");
+              }
+            } else if (!found_with_k && found_file.empty()) {
+              // First match without K (store but keep looking for one with K)
+              found_file = entry.path().string();
             }
-            found_file = entry.path().string();
           }
         }
       }
 
+      // If we have a file without K but we also found one with K, we already have the with-K one.
+      // If we never found any file, throw.
       if (found_file.empty()) {
         throw InvalidInputException(
-          "No constraint file found for graph basename '" + base +
+          "No constraint file found for graph base '" + base +
           "' in folder '" + context.partition.constraint_folder + "'.");
       }
 
