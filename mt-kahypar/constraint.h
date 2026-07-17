@@ -27,6 +27,9 @@
 #pragma once
 
 #include <fstream>
+#include <deque>
+#include <algorithm>
+#include <limits>
 
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/factories.h"
@@ -38,13 +41,8 @@
 
 namespace mt_kahypar::constraints {
 
-using Key = std::tuple<HypernodeID, HypernodeID, HypernodeID>;
-
-template<typename Comparator = std::less<Key>, uint32_t arity = 4>
-using PQ = ds::Heap<Key, HypernodeID, Comparator, arity>;
-
 // ----------------------------------------------------------------------------
-// ConstraintGraph – flat adjacency list of anti‑affinity pairs
+// ConstraintGraph – flat adjacency list (unchanged from your version)
 // ----------------------------------------------------------------------------
 struct ConstraintGraph {
   explicit ConstraintGraph(const HypernodeID num_hypernodes) :
@@ -80,16 +78,14 @@ struct ConstraintGraph {
 
 namespace {
 
-// Same line format as the constraint-file reader in hypergraph_factory.cc:
-// whitespace separated "u v" pairs, one constraint per line.
+// Reads constraint pairs from file (unchanged)
 inline void readConstraintPairs(const std::string& filename,
                                 vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
   std::ifstream file(filename);
   if ( !file.is_open() ) {
     throw InvalidInputException("Could not open constraint file: " + filename);
   }
-  HypernodeID u = 0;
-  HypernodeID v = 0;
+  HypernodeID u = 0, v = 0;
   while ( file >> u >> v ) {
     constraints.emplace_back(u, v);
   }
@@ -127,7 +123,7 @@ HypernodeID countViolatedConstraints(const PartitionedHypergraph& partitioned_hg
     if (!constraint_graph.isConstrained(u)) continue;
     const PartitionID part_u = partitioned_hg.partID(u);
     for (HypernodeID v : constraint_graph.neighbors(u)) {
-      if (v <= u) continue;   // each undirected pair appears twice – count once
+      if (v <= u) continue;   // count each undirected pair once
       if (partitioned_hg.partID(v) == part_u) {
         ++violated;
       }
@@ -137,12 +133,13 @@ HypernodeID countViolatedConstraints(const PartitionedHypergraph& partitioned_hg
 }
 
 template<typename PartitionedHypergraph>
-bool verifyConstraints(const PartitionedHypergraph& partitioned_hg, const ConstraintGraph& constraint_graph) {
-  for ( HypernodeID u = 0; u < constraint_graph.numNodes(); ++u ) {
-    if ( !constraint_graph.isConstrained(u) ) continue;
-    for ( const HypernodeID v : constraint_graph.neighbors(u) ) {
-      if ( v <= u ) continue; // each undirected constraint is stored twice, check once
-      if ( partitioned_hg.partID(u) == partitioned_hg.partID(v) ) {
+bool verifyConstraints(const PartitionedHypergraph& partitioned_hg,
+                       const ConstraintGraph& constraint_graph) {
+  for (HypernodeID u = 0; u < constraint_graph.numNodes(); ++u) {
+    if (!constraint_graph.isConstrained(u)) continue;
+    for (const HypernodeID v : constraint_graph.neighbors(u)) {
+      if (v <= u) continue;
+      if (partitioned_hg.partID(u) == partitioned_hg.partID(v)) {
         return false;
       }
     }
@@ -150,196 +147,268 @@ bool verifyConstraints(const PartitionedHypergraph& partitioned_hg, const Constr
   return true;
 }
 
+// ----------------------------------------------------------------------------
+// Core fixing helpers (adopted from the good version)
+// ----------------------------------------------------------------------------
+
+// Counts how many constraint neighbours of a node are in the same block
 template<typename PartitionedHypergraph>
 HypernodeID incidentNodesInSamePart(const PartitionedHypergraph& partitioned_hg,
                                     const ConstraintGraph& constraint_graph,
                                     const HypernodeID node_id) {
-  HypernodeID num_nodes = 0;
+  HypernodeID num = 0;
   const PartitionID part = partitioned_hg.partID(node_id);
-  for ( const HypernodeID neighbor : constraint_graph.neighbors(node_id) ) {
-    if ( partitioned_hg.partID(neighbor) == part ) {
-      ++num_nodes;
-    }
+  for (const HypernodeID neighbor : constraint_graph.neighbors(node_id)) {
+    if (partitioned_hg.partID(neighbor) == part) ++num;
   }
-  return num_nodes;
+  return num;
 }
 
+// Picks the partition with maximum gain, respecting:
+//   - invalid_partitions (occupied by a constraint neighbour)
+//   - capacity limits (partWeight(p) + node_weight <= max_part_weight[p])
 template<typename PartitionedHypergraph>
-PartitionID getBestCutPartition(const bool must_cut_be_positive,
-                                const HypernodeID& node_id,
-                                const PartitionID& current_partition,
-                                const vec<bool>& is_partition_invalid,
-                                gain_cache_t& gain_cache) {
-  PartitionID best_partition = current_partition;
-  const PartitionID num_partitons = is_partition_invalid.size();
-  HyperedgeWeight max_gain = std::numeric_limits<HyperedgeWeight>::min();
+PartitionID getBestPartitionWithCapacity(const HypernodeID node_id,
+                                         const PartitionID current_partition,
+                                         const vec<bool>& invalid_partitions,
+                                         const PartitionedHypergraph& partitioned_hg,
+                                         const Context& context,
+                                         gain_cache_t& gain_cache) {
+  PartitionID best = current_partition;
+  HyperedgeWeight best_gain = std::numeric_limits<HyperedgeWeight>::min();
+  const HypernodeWeight node_w = partitioned_hg.nodeWeight(node_id);
 
-  for (PartitionID partition = 0; partition < num_partitons; partition++) {
-    if (is_partition_invalid[partition]) continue;
-    HyperedgeWeight gain = GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
-      [&](const auto& cache){
-        return cache.gain(node_id, current_partition, partition);
-      },
+  for (PartitionID p = 0; p < partitioned_hg.k(); ++p) {
+    if (invalid_partitions[p]) continue;
+    // Capacity check – only allow move if target partition can accommodate the node
+    if (partitioned_hg.partWeight(p) + node_w > context.partition.max_part_weights[p])
+      continue;
+
+    const HyperedgeWeight gain = GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+      [&](const auto& cache) { return cache.gain(node_id, current_partition, p); },
       gain_cache
     );
-    if (must_cut_be_positive && gain < 0) continue;
-    if (gain > max_gain) {
-      max_gain = gain;
-      best_partition = partition;
+    if (gain > best_gain) {
+      best_gain = gain;
+      best = p;
     }
   }
-  return best_partition;
+  return best;
 }
 
+// ----------------------------------------------------------------------------
+// Propagation-based fixer – processes a queue of violating nodes and
+// propagates moves to neighbours.
+// ----------------------------------------------------------------------------
 template<typename PartitionedHypergraph>
-void descendingConstraintDegree(PartitionedHypergraph& partitioned_hg,
-                                const Context& context,
-                                const ConstraintGraph& constraint_graph,
-                                gain_cache_t& gain_cache) {
-  unused(context);
+void propagateConstraintFixes(PartitionedHypergraph& partitioned_hg,
+                              ConstraintGraph& constraint_graph,
+                              gain_cache_t& gain_cache,
+                              const Context& context) {
+  // Initialise gain cache
   GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
-    [&](auto& cache){
-        cache.initializeGainCache(partitioned_hg);
-    },
+    [&](auto& cache) { cache.initializeGainCache(partitioned_hg); },
     gain_cache
   );
-  auto delta_func =
-  [&partitioned_hg, &gain_cache](const SynchronizedEdgeUpdate& sync_update) {
+
+  auto delta_func = [&partitioned_hg, &gain_cache](const SynchronizedEdgeUpdate& sync_update) {
     GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
-      [&](auto& cache) {
-        cache.deltaGainUpdate(partitioned_hg, sync_update);
-      },
+      [&](auto& cache) { cache.deltaGainUpdate(partitioned_hg, sync_update); },
       gain_cache
     );
   };
 
-  // initialize PQ -- only constrained nodes are inserted
-  std::vector<PosT> positions(constraint_graph.numNodes(), invalid_position);
-  PQ<std::less<Key>, 4> heap(positions.data(), positions.size());
-  for ( HypernodeID node = 0; node < constraint_graph.numNodes(); ++node ) {
-    if ( !constraint_graph.isConstrained(node) ) continue;
-    heap.insert(node, { incidentNodesInSamePart(partitioned_hg, constraint_graph, node),
-                        constraint_graph.degree(node), node });
+  const size_t n = constraint_graph.numNodes();
+  std::deque<HypernodeID> q;
+  vec<char> in_queue(n, 0);
+
+  // Initialise queue with all violating nodes
+  for (HypernodeID node = 0; node < n; ++node) {
+    if (constraint_graph.isConstrained(node) &&
+        incidentNodesInSamePart(partitioned_hg, constraint_graph, node) > 0) {
+      q.push_back(node);
+      in_queue[node] = 1;
+    }
   }
 
-  while ( !heap.empty() ) {
-    const HypernodeID node_id = heap.top();
-    heap.deleteTop();
-    const PartitionID partition_id = partitioned_hg.partID(node_id);
-    vec<bool> invalid_partitions(partitioned_hg.k(), false);
+  const size_t max_moves = std::max<size_t>(n * 4, 1000);
+  size_t moves = 0;
 
-    for ( const HypernodeID neighbor : constraint_graph.neighbors(node_id) ) {
-      const PartitionID neighbor_partition_id = partitioned_hg.partID(neighbor);
-      invalid_partitions[neighbor_partition_id] = true;
+  while (!q.empty() && moves < max_moves) {
+    HypernodeID node = q.front(); q.pop_front(); in_queue[node] = 0;
+
+    const PartitionID cur_part = partitioned_hg.partID(node);
+    // Determine partitions occupied by constraint neighbours
+    vec<bool> invalid(partitioned_hg.k(), false);
+    for (const HypernodeID nb : constraint_graph.neighbors(node)) {
+      invalid[partitioned_hg.partID(nb)] = true;
     }
-    const PartitionID new_partition_id = getBestCutPartition<PartitionedHypergraph>(
-      false, node_id, partition_id, invalid_partitions, gain_cache);
-    if ( new_partition_id != partition_id ) {
-      partitioned_hg.changeNodePart(node_id, partition_id, new_partition_id, delta_func);
+
+    // If this node is no longer violating, skip
+    if (!invalid[cur_part]) continue;
+
+    // Choose best valid partition (respecting capacities)
+    const PartitionID best = getBestPartitionWithCapacity(
+        node, cur_part, invalid, partitioned_hg, context, gain_cache);
+
+    if (best == cur_part) continue;  // no move possible
+
+    // Perform the move
+    partitioned_hg.changeNodePart(node, cur_part, best, delta_func);
+    ++moves;
+
+    // Enqueue all neighbours (they might now be in conflict)
+    for (const HypernodeID nb : constraint_graph.neighbors(node)) {
+      if (!in_queue[nb] &&
+          incidentNodesInSamePart(partitioned_hg, constraint_graph, nb) > 0) {
+        q.push_back(nb);
+        in_queue[nb] = 1;
+      }
     }
+
+    // Re‑enqueue the moved node if it still violates
+    if (incidentNodesInSamePart(partitioned_hg, constraint_graph, node) > 0 && !in_queue[node]) {
+      q.push_back(node);
+      in_queue[node] = 1;
+    }
+  }
+
+  LOG << "propagateConstraintFixes moved=" << moves << " max_moves=" << max_moves;
+}
+
+// ----------------------------------------------------------------------------
+// Robust iterative fixer with pinning (for stubborn cases)
+// ----------------------------------------------------------------------------
+template<typename PartitionedHypergraph>
+void robustConstraintFixes(PartitionedHypergraph& partitioned_hg,
+                           ConstraintGraph& constraint_graph,
+                           gain_cache_t& gain_cache,
+                           const Context& context) {
+  GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+    [&](auto& cache) { cache.initializeGainCache(partitioned_hg); },
+    gain_cache
+  );
+
+  auto delta_func = [&partitioned_hg, &gain_cache](const SynchronizedEdgeUpdate& sync_update) {
+    GainCachePtr::applyWithConcreteGainCacheForHG<PartitionedHypergraph>(
+      [&](auto& cache) { cache.deltaGainUpdate(partitioned_hg, sync_update); },
+      gain_cache
+    );
+  };
+
+  const size_t n = constraint_graph.numNodes();
+  const size_t max_rounds = 200;
+  const size_t pin_rounds = 2;   // how many rounds a moved node is frozen
+  vec<uint8_t> pin_cooldown(n, 0);
+
+  size_t total_moves = 0;
+  size_t round = 0;
+
+  for (; round < max_rounds; ++round) {
+    // Collect violating nodes with their violation counts
+    vec<std::pair<HypernodeID, HypernodeID>> viols;
+    for (HypernodeID node = 0; node < n; ++node) {
+      if (constraint_graph.isConstrained(node)) {
+        const HypernodeID cnt = incidentNodesInSamePart(partitioned_hg, constraint_graph, node);
+        if (cnt > 0) viols.emplace_back(node, cnt);
+      }
+    }
+    if (viols.empty()) break;
+
+    // Process worst offenders first
+    std::sort(viols.begin(), viols.end(),
+              [](const auto& a, const auto& b) { return a.second > b.second; });
+
+    size_t moves_this_round = 0;
+    for (const auto& [node, cnt] : viols) {
+      if (pin_cooldown[node] > 0) continue;
+
+      const PartitionID cur_part = partitioned_hg.partID(node);
+
+      vec<bool> invalid(partitioned_hg.k(), false);
+      for (const HypernodeID nb : constraint_graph.neighbors(node)) {
+        invalid[partitioned_hg.partID(nb)] = true;
+      }
+
+      if (!invalid[cur_part]) continue;   // not actually violating now (may have been fixed)
+
+      const PartitionID best = getBestPartitionWithCapacity(
+          node, cur_part, invalid, partitioned_hg, context, gain_cache);
+
+      if (best == cur_part) continue;
+
+      partitioned_hg.changeNodePart(node, cur_part, best, delta_func);
+      ++moves_this_round;
+      ++total_moves;
+
+      // Freeze this node and its neighbours temporarily
+      pin_cooldown[node] = pin_rounds;
+      for (const HypernodeID nb : constraint_graph.neighbors(node)) {
+        pin_cooldown[nb] = std::max<uint8_t>(pin_cooldown[nb], 1);
+      }
+    }
+
+    // Decrease cooldowns
+    for (size_t i = 0; i < n; ++i) {
+      if (pin_cooldown[i] > 0) --pin_cooldown[i];
+    }
+
+    if (moves_this_round == 0) break;
+  }
+
+  LOG << "robustConstraintFixes total_moves=" << total_moves
+      << " rounds_used=" << (round + 1);
+  if (round == max_rounds) {
+    LOG << "WARNING: reached max_rounds=" << max_rounds
+        << " – consider raising further.";
   }
 }
 
+// ----------------------------------------------------------------------------
+// Main postprocessing entry point – no separate rebalancer!
+// ----------------------------------------------------------------------------
 template<typename PartitionedHypergraph>
 void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
-  if ( context.partition.constraint_file_name.empty() ) {
+  if (context.partition.constraint_file_name.empty()) {
     return;
   }
 
-  ConstraintGraph constraint_graph = buildConstraintGraph(
-    context.partition.constraint_file_name, partitioned_hg.initialNumNodes());
+  // Build constraint graph from file
+  ConstraintGraph constraint_graph =
+      buildConstraintGraph(context.partition.constraint_file_name,
+                           partitioned_hg.initialNumNodes());
 
+  // Log initial violations
+  const HypernodeID init_viol = countViolatedConstraints(partitioned_hg, constraint_graph);
+  LOG << "Initial violated constraints: " << init_viol;
+
+  // Construct gain cache
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
-  std::unique_ptr<IRebalancer> rebalancer = RebalancerFactory::getInstance().createObject(
-      context.refinement.rebalancing.algorithm, partitioned_hg.initialNumNodes(), context, gain_cache);
 
-  // ---- initial violation count ----
-  HypernodeID initial_violations = countViolatedConstraints(partitioned_hg, constraint_graph);
-  LOG << "Initial violated constraints before any fix: " << initial_violations;
+  // First, try the fast propagation fixer
+  propagateConstraintFixes(partitioned_hg, constraint_graph, gain_cache, context);
 
-  // ---- iterative repair loop ----
-  const size_t max_iterations = 50;   // safety guard
-  size_t iteration = 0;
-  bool constraints_ok = false;
-  bool balance_ok = false;
-
-  while (iteration < max_iterations) {
-    ++iteration;
-    LOG << "Iteration " << iteration << ": fixing constraints...";
-
-    // 1. Fix constraints (descending constraint degree)
-    descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
-
-    // 2. Check constraints and balance after fixing
-    HypernodeID violations = countViolatedConstraints(partitioned_hg, constraint_graph);
-    double imbalance = metrics::imbalance(partitioned_hg, context);
-    LOG << "After fix: violations = " << violations << ", imbalance = " << imbalance;
-
-    constraints_ok = (violations == 0);
-    balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
-
-    if (constraints_ok && balance_ok) {
-      LOG << "Both constraints and balance satisfied after fix.";
-      break;
-    }
-
-    // 3. If constraints are ok but balance is not, run rebalancer
-    if (constraints_ok && !balance_ok) {
-      LOG << "Constraints ok, running rebalancer to fix imbalance...";
-      Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
-      mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
-      rebalancer->initialize(phg);
-      rebalancer->refine(phg, {}, metrics, 0.0);
-
-      // 4. Re-check after rebalancer
-      violations = countViolatedConstraints(partitioned_hg, constraint_graph);
-      imbalance = metrics::imbalance(partitioned_hg, context);
-      LOG << "After rebalancer: violations = " << violations << ", imbalance = " << imbalance;
-
-      constraints_ok = (violations == 0);
-      balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
-
-      if (constraints_ok && balance_ok) {
-        LOG << "Both constraints and balance satisfied after rebalancer.";
-        break;
-      }
-    } else {
-      // If constraints are not ok, rebalancing might break them further, so we loop again.
-      // But we can still try rebalancing if imbalance is bad, but better to loop to fix constraints first.
-      // However, sometimes rebalancing helps with constraints indirectly, so we can run it anyway.
-      LOG << "Constraints not ok, rebalancing might help or hurt; will try rebalancer anyway.";
-      Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
-      mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
-      rebalancer->initialize(phg);
-      rebalancer->refine(phg, {}, metrics, 0.0);
-
-      // After rebalancer, re-check (it may have improved or worsened constraints)
-      violations = countViolatedConstraints(partitioned_hg, constraint_graph);
-      imbalance = metrics::imbalance(partitioned_hg, context);
-      LOG << "After rebalancer: violations = " << violations << ", imbalance = " << imbalance;
-
-      constraints_ok = (violations == 0);
-      balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
-
-      if (constraints_ok && balance_ok) {
-        LOG << "Both constraints and balance satisfied after rebalancer.";
-        break;
-      }
-    }
+  // If violations remain, run the more robust iterative fixer
+  const HypernodeID viol_after_prop = countViolatedConstraints(partitioned_hg, constraint_graph);
+  if (viol_after_prop > 0) {
+    LOG << "After propagation, still " << viol_after_prop
+        << " violations – running robust fixer.";
+    robustConstraintFixes(partitioned_hg, constraint_graph, gain_cache, context);
   }
 
-  // ---- final log ----
-  LOG << "-------------- final stats after postprocessing --------------";
+  // Final verification
+  const HypernodeID final_viol = countViolatedConstraints(partitioned_hg, constraint_graph);
+  const double imbalance = metrics::imbalance(partitioned_hg, context);
+  LOG << "-------------- final stats --------------";
   LOG << "km1       = " << metrics::quality(partitioned_hg, context);
-  LOG << "Imbalance = " << metrics::imbalance(partitioned_hg, context);
-  LOG << "Constraints satisfied: " << (verifyConstraints(partitioned_hg, constraint_graph) ? "yes" : "no");
-  if (!constraints_ok || !balance_ok) {
-    LOG << "WARNING: Not all constraints satisfied or imbalance exceeds epsilon after " << iteration << " iterations!";
+  LOG << "Imbalance = " << imbalance;
+  LOG << "Violations = " << final_viol;
+  if (final_viol == 0 && imbalance <= context.partition.epsilon + 1e-9) {
+    LOG << "SUCCESS: All constraints satisfied and balance within epsilon.";
   } else {
-    LOG << "SUCCESS: All constraints satisfied and imbalance within epsilon.";
+    LOG << "WARNING: Violations=" << final_viol << ", imbalance=" << imbalance;
   }
-  LOG << "";
 
   GainCachePtr::deleteGainCache(gain_cache);
 }
