@@ -267,12 +267,13 @@ namespace mt_kahypar {
       "with weight --negative-edge-weight is added between them."
     )->check(CLI::ExistingFile);
 
-    // --constraint-folder option: construct the expected constraint filename
+    // --constraint-folder option: automatically find the constraint file
     auto constraint_folder_option = app.add_option(
       "--constraint-folder",
       context.partition.constraint_folder,
-      "Folder containing constraint files. The tool will automatically search for a matching file "
-      "(several naming conventions are tried). Mutually exclusive with --constraint-file."
+      "Folder containing constraint files. The tool will try the graph filename as-is first, "
+      "then fall back to <base>.<k>.constraints.txt, <base>.constraints.txt, and <base>.\n"
+      "Mutually exclusive with --constraint-file."
     )->check(CLI::ExistingDirectory);
 
     // Make the two options mutually exclusive
@@ -1238,7 +1239,15 @@ namespace mt_kahypar {
         // Get the graph's pure filename (no directory)
         std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
 
-        // Strip known suffixes (.part*, .epsilon*, .seed*, .KaHyPar) to get the base
+        // Build a list of possible constraint filenames to try.
+        // 1) The graph filename itself (as EMIL does)
+        // 2) Stripped base + .k.constraints.txt
+        // 3) Stripped base + .constraints.txt
+        // 4) Stripped base (just in case)
+        std::vector<std::string> candidates;
+        candidates.push_back(graph_filename);   // exact name, e.g., "2cubes_sphere.mtx.hgr"
+
+        // Compute base by stripping known suffixes
         std::string base = graph_filename;
         auto strip_suffix = [&](const std::string& suffix) {
             size_t pos = base.rfind(suffix);
@@ -1248,23 +1257,19 @@ namespace mt_kahypar {
             }
             return false;
         };
-        // Remove .KaHyPar first
         strip_suffix(".KaHyPar");
-        // Remove .part and subsequent digits
         size_t pos = base.rfind(".part");
         if (pos != std::string::npos) {
             size_t end = pos + 5;
             while (end < base.size() && isdigit(base[end])) ++end;
             if (end > pos + 5) base = base.substr(0, pos);
         }
-        // Remove .epsilon and following digits and dots
         pos = base.rfind(".epsilon");
         if (pos != std::string::npos) {
             size_t end = pos + 8;
             while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
             if (end > pos + 8) base = base.substr(0, pos);
         }
-        // Remove .seed and digits
         pos = base.rfind(".seed");
         if (pos != std::string::npos) {
             size_t end = pos + 5;
@@ -1272,11 +1277,9 @@ namespace mt_kahypar {
             if (end > pos + 5) base = base.substr(0, pos);
         }
 
-        // Build a list of possible constraint filenames to try
-        std::vector<std::string> candidates;
         candidates.push_back(base + "." + std::to_string(context.partition.k) + ".constraints.txt");
         candidates.push_back(base + ".constraints.txt");
-        candidates.push_back(base);   // just the graph name itself
+        candidates.push_back(base);
 
         // Try each candidate
         fs::path found;
