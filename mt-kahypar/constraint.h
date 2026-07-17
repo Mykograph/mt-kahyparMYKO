@@ -254,30 +254,58 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   std::unique_ptr<IRebalancer> rebalancer = RebalancerFactory::getInstance().createObject(
       context.refinement.rebalancing.algorithm, partitioned_hg.initialNumNodes(), context, gain_cache);
 
-  // Step 1: Fix constraints by moving nodes to reduce violations
-  descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
+  // ---- initial violation count ----
+  HypernodeID initial_violations = countViolatedConstraints(partitioned_hg, constraint_graph);
+  LOG << "Initial violated constraints before any fix: " << initial_violations;
 
-  // Log violations after initial fix
-  HypernodeID violations_after_fix = countViolatedConstraints(partitioned_hg, constraint_graph);
-  LOG << "Violated constraints after descendingConstraintDegree: " << violations_after_fix;
+  // ---- iterative repair loop ----
+  const size_t max_iterations = 20;   // safety guard
+  size_t iteration = 0;
+  bool constraints_ok = false;
+  bool balance_ok = false;
 
-  // Step 2: Rebalance to satisfy block weight limits (may break constraints)
-  Metrics metrics { metrics::quality(partitioned_hg, context), metrics::imbalance(partitioned_hg, context) };
-  mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
-  rebalancer->initialize(phg);
-  rebalancer->refine(phg, {}, metrics, 0.0);
+  while (iteration < max_iterations) {
+    ++iteration;
+    LOG << "Iteration " << iteration << ": fixing constraints...";
 
-  // Log violations after rebalancing
-  HypernodeID violations_after_rebalancer = countViolatedConstraints(partitioned_hg, constraint_graph);
-  LOG << "Violated constraints after rebalancer: " << violations_after_rebalancer;
+    // 1. Fix constraints by moving nodes to reduce violations
+    descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
 
-  // Print final stats and status
-  LOG << "-------------- stats after postprocessing --------------";
+    // 2. Check how many violations remain
+    HypernodeID violations_after_fix = countViolatedConstraints(partitioned_hg, constraint_graph);
+    LOG << "Violations after descendingConstraintDegree: " << violations_after_fix;
+    constraints_ok = (violations_after_fix == 0);
+
+    // 3. Check balance
+    double imbalance = metrics::imbalance(partitioned_hg, context);
+    LOG << "Imbalance after descendingConstraintDegree: " << imbalance;
+    balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
+
+    // 4. If both are satisfied, we are done
+    if (constraints_ok && balance_ok) {
+      LOG << "All constraints satisfied and balance within epsilon after " << iteration << " iterations.";
+      break;
+    }
+
+    // 5. If constraints are ok but balance is not, run rebalancer and continue
+    //    If constraints are not ok, we also run rebalancer (maybe it helps), then loop again.
+    LOG << "Running rebalancer to improve imbalance...";
+    Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
+    mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
+    rebalancer->initialize(phg);
+    rebalancer->refine(phg, {}, metrics, 0.0);
+
+    // After rebalancing, we loop back to fix any new constraint violations
+  }
+
+  // ---- final log ----
+  LOG << "-------------- final stats after postprocessing --------------";
   LOG << "km1       = " << metrics::quality(partitioned_hg, context);
   LOG << "Imbalance = " << metrics::imbalance(partitioned_hg, context);
-  LOG << (verifyConstraints(partitioned_hg, constraint_graph)
-         ? "All constraints are satisfied."
-         : "!!! Some constraints remain violated !!!");
+  LOG << "Constraints satisfied: " << (verifyConstraints(partitioned_hg, constraint_graph) ? "yes" : "no");
+  if (!constraints_ok || !balance_ok) {
+    LOG << "WARNING: Not all constraints satisfied or imbalance exceeds epsilon after " << iteration << " iterations!";
+  }
   LOG << "";
 
   GainCachePtr::deleteGainCache(gain_cache);
