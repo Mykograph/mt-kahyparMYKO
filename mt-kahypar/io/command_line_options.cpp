@@ -1234,21 +1234,49 @@ namespace mt_kahypar {
         throw InvalidInputException("Constraint folder does not exist or is not a directory: " + context.partition.constraint_folder);
       }
 
-      // Extract the graph name up to and including ".hgr" if present,
-      // otherwise use the stem (filename without extension).
+      // Extract the graph name up to and including ".hgr" if present.
+      // If not present, strip known suffixes to get a clean base.
       std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
       std::string base;
+
       size_t hgr_pos = graph_filename.find(".hgr");
       if (hgr_pos != std::string::npos) {
-        // include ".hgr" in the base
         base = graph_filename.substr(0, hgr_pos + 4);
       } else {
-        // fallback: use the stem (no extension)
-        base = fs::path(context.partition.graph_filename).stem().string();
+        // No ".hgr": remove common suffixes to get the core name.
+        base = graph_filename;
+
+        // Remove .KaHyPar
+        size_t pos = base.rfind(".KaHyPar");
+        if (pos != std::string::npos) base = base.substr(0, pos);
+
+        // Remove .part followed by digits
+        pos = base.rfind(".part");
+        if (pos != std::string::npos) {
+          size_t end = pos + 5;
+          while (end < base.size() && isdigit(base[end])) ++end;
+          if (end > pos + 5) base = base.substr(0, pos);
+        }
+
+        // Remove .epsilon followed by digits and dots
+        pos = base.rfind(".epsilon");
+        if (pos != std::string::npos) {
+          size_t end = pos + 8;
+          while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
+          if (end > pos + 8) base = base.substr(0, pos);
+        }
+
+        // Remove .seed followed by digits
+        pos = base.rfind(".seed");
+        if (pos != std::string::npos) {
+          size_t end = pos + 5;
+          while (end < base.size() && isdigit(base[end])) ++end;
+          if (end > pos + 5) base = base.substr(0, pos);
+        }
       }
 
-      // We want to find a file that starts with 'base' and, if possible, contains the K value.
-      // This handles files named like "graph.hgr.16.constraints.txt" or "graph.hgr.constraints.txt"
+      // Search for a file whose name starts with 'base'.
+      // Prefer a file that contains the K value (e.g., ".16.") if present.
       std::string k_str = "." + std::to_string(context.partition.k) + ".";
       std::string found_file;
       bool found_with_k = false;
@@ -1256,29 +1284,24 @@ namespace mt_kahypar {
       for (const auto& entry : fs::directory_iterator(folder)) {
         if (entry.is_regular_file()) {
           std::string filename = entry.path().filename().string();
-          if (filename.find(base) == 0) { // starts with base
+          if (filename.find(base) == 0) {
             if (filename.find(k_str) != std::string::npos) {
-              // Prefer file that contains the K value
               if (!found_with_k) {
                 found_file = entry.path().string();
                 found_with_k = true;
               } else {
-                // Already have one with K -> ambiguous
                 throw InvalidInputException(
                   "Multiple constraint files with K=" + std::to_string(context.partition.k) +
                   " found for graph base '" + base + "' in folder '" + context.partition.constraint_folder +
                   "'. Please specify explicitly using --constraint-file.");
               }
             } else if (!found_with_k && found_file.empty()) {
-              // First match without K (store but keep looking for one with K)
               found_file = entry.path().string();
             }
           }
         }
       }
 
-      // If we have a file without K but we also found one with K, we already have the with-K one.
-      // If we never found any file, throw.
       if (found_file.empty()) {
         throw InvalidInputException(
           "No constraint file found for graph base '" + base +
