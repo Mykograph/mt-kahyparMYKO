@@ -271,9 +271,8 @@ namespace mt_kahypar {
     auto constraint_folder_option = app.add_option(
       "--constraint-folder",
       context.partition.constraint_folder,
-      "Folder containing constraint files. The tool will automatically construct the file name as "
-      "<hypergraph-basename>.<k>.constraints.txt and look for it in this folder. "
-      "Mutually exclusive with --constraint-file."
+      "Folder containing constraint files. The tool will automatically search for a matching file "
+      "(several naming conventions are tried). Mutually exclusive with --constraint-file."
     )->check(CLI::ExistingDirectory);
 
     // Make the two options mutually exclusive
@@ -1227,60 +1226,100 @@ namespace mt_kahypar {
       ERR(e.what());
     }
 
-    // --- Handle --constraint-folder: construct the expected file name ---
+    // --- Handle --constraint-folder: search for matching file ---
     if (!context.partition.constraint_folder.empty()) {
-      namespace fs = std::filesystem;
+        namespace fs = std::filesystem;
+        fs::path folder(context.partition.constraint_folder);
+        if (!fs::exists(folder) || !fs::is_directory(folder)) {
+            throw InvalidInputException("Constraint folder does not exist or is not a directory: " +
+                                        context.partition.constraint_folder);
+        }
 
-      // 1. Get the pure filename without the directory
-      std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
+        // Get the graph's pure filename (no directory)
+        std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
 
-      // 2. Strip known suffixes (part, epsilon, seed, KaHyPar) to get the base name
-      std::string base = graph_filename;
+        // Strip known suffixes (.part*, .epsilon*, .seed*, .KaHyPar) to get the base
+        std::string base = graph_filename;
+        auto strip_suffix = [&](const std::string& suffix) {
+            size_t pos = base.rfind(suffix);
+            if (pos != std::string::npos) {
+                base = base.substr(0, pos);
+                return true;
+            }
+            return false;
+        };
+        // Remove .KaHyPar first
+        strip_suffix(".KaHyPar");
+        // Remove .part and subsequent digits
+        size_t pos = base.rfind(".part");
+        if (pos != std::string::npos) {
+            size_t end = pos + 5;
+            while (end < base.size() && isdigit(base[end])) ++end;
+            if (end > pos + 5) base = base.substr(0, pos);
+        }
+        // Remove .epsilon and following digits and dots
+        pos = base.rfind(".epsilon");
+        if (pos != std::string::npos) {
+            size_t end = pos + 8;
+            while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
+            if (end > pos + 8) base = base.substr(0, pos);
+        }
+        // Remove .seed and digits
+        pos = base.rfind(".seed");
+        if (pos != std::string::npos) {
+            size_t end = pos + 5;
+            while (end < base.size() && isdigit(base[end])) ++end;
+            if (end > pos + 5) base = base.substr(0, pos);
+        }
 
-      // Remove .KaHyPar
-      size_t pos = base.rfind(".KaHyPar");
-      if (pos != std::string::npos) base = base.substr(0, pos);
+        // Build a list of possible constraint filenames to try
+        std::vector<std::string> candidates;
+        candidates.push_back(base + "." + std::to_string(context.partition.k) + ".constraints.txt");
+        candidates.push_back(base + ".constraints.txt");
+        candidates.push_back(base);   // just the graph name itself
 
-      // Remove .part followed by digits
-      pos = base.rfind(".part");
-      if (pos != std::string::npos) {
-        size_t end = pos + 5;
-        while (end < base.size() && isdigit(base[end])) ++end;
-        if (end > pos + 5) base = base.substr(0, pos);
-      }
+        // Try each candidate
+        fs::path found;
+        for (const auto& cand : candidates) {
+            fs::path full = folder / cand;
+            if (fs::exists(full) && fs::is_regular_file(full)) {
+                found = full;
+                break;
+            }
+        }
 
-      // Remove .epsilon followed by digits and dots
-      pos = base.rfind(".epsilon");
-      if (pos != std::string::npos) {
-        size_t end = pos + 8;
-        while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
-        if (end > pos + 8) base = base.substr(0, pos);
-      }
+        // If none found, fall back to scanning the directory for any file whose stem matches 'base'
+        if (found.empty()) {
+            std::vector<fs::path> matches;
+            for (const auto& entry : fs::directory_iterator(folder)) {
+                if (entry.is_regular_file()) {
+                    std::string stem = entry.path().stem().string(); // name without extension
+                    // Compare stem with base (ignoring the .hgr extension if present)
+                    std::string base_stem = base;
+                    size_t hgr = base_stem.rfind(".hgr");
+                    if (hgr != std::string::npos) base_stem = base_stem.substr(0, hgr);
+                    if (stem == base_stem || stem == base) {
+                        matches.push_back(entry.path());
+                    }
+                }
+            }
+            if (matches.empty()) {
+                std::string err = "No constraint file found in folder '" + context.partition.constraint_folder +
+                                  "' for graph base '" + base + "'.\nTried:\n";
+                for (const auto& c : candidates) err += "  " + (folder / c).string() + "\n";
+                err += "Also scanned for files with stem matching '" + base + "' or '" + base + "' without .hgr, but none found.";
+                throw InvalidInputException(err);
+            } else if (matches.size() > 1) {
+                std::string err = "Multiple constraint files found for graph base '" + base + "' in folder:\n";
+                for (const auto& m : matches) err += "  " + m.string() + "\n";
+                err += "Please specify explicitly using --constraint-file.";
+                throw InvalidInputException(err);
+            } else {
+                found = matches.front();
+            }
+        }
 
-      // Remove .seed followed by digits
-      pos = base.rfind(".seed");
-      if (pos != std::string::npos) {
-        size_t end = pos + 5;
-        while (end < base.size() && isdigit(base[end])) ++end;
-        if (end > pos + 5) base = base.substr(0, pos);
-      }
-
-      // 3. Construct the expected constraint file name: <base>.<k>.constraints.txt
-      std::string expected_name = base + "." + std::to_string(context.partition.k) + ".constraints.txt";
-
-      // 4. Build the full path
-      fs::path constraint_path = fs::path(context.partition.constraint_folder) / expected_name;
-
-      // 5. Check if the file exists
-      if (!fs::exists(constraint_path)) {
-        throw InvalidInputException(
-          "Constraint file not found: " + constraint_path.string() +
-          "\nExpected name based on graph filename: " + expected_name +
-          "\nMake sure the file exists in the constraint folder.");
-      }
-
-      // 6. Set the constraint file name
-      context.partition.constraint_file_name = constraint_path.string();
+        context.partition.constraint_file_name = found.string();
     }
 
     std::string epsilon_str = std::to_string(context.partition.epsilon);
