@@ -253,24 +253,33 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
   std::unique_ptr<IRebalancer> rebalancer = RebalancerFactory::getInstance().createObject(
       context.refinement.rebalancing.algorithm, partitioned_hg.initialNumNodes(), context, gain_cache);
+
+  // Step 1: Fix constraints by moving nodes to reduce violations
   descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
 
+  // Log violations after initial fix
+  HypernodeID violations_after_fix = countViolatedConstraints(partitioned_hg, constraint_graph);
+  LOG << "Violated constraints after descendingConstraintDegree: " << violations_after_fix;
+
+  // Step 2: Rebalance to satisfy block weight limits (may break constraints)
   Metrics metrics { metrics::quality(partitioned_hg, context), metrics::imbalance(partitioned_hg, context) };
   mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
   rebalancer->initialize(phg);
   rebalancer->refine(phg, {}, metrics, 0.0);
+
+  // Log violations after rebalancing
+  HypernodeID violations_after_rebalancer = countViolatedConstraints(partitioned_hg, constraint_graph);
+  LOG << "Violated constraints after rebalancer: " << violations_after_rebalancer;
+
+  // Print final stats and status
   LOG << "-------------- stats after postprocessing --------------";
-  LOG << "km1       ="<< metrics::quality(partitioned_hg, context);
-  LOG << "Imbalance ="<<metrics::imbalance(partitioned_hg, context);
-  LOG << (verifyConstraints(partitioned_hg, constraint_graph)? "Constrains were respected from balancer" : "!!! Balancer destroyed constrains !!!");
+  LOG << "km1       = " << metrics::quality(partitioned_hg, context);
+  LOG << "Imbalance = " << metrics::imbalance(partitioned_hg, context);
+  LOG << (verifyConstraints(partitioned_hg, constraint_graph)
+         ? "All constraints are satisfied."
+         : "!!! Some constraints remain violated !!!");
   LOG << "";
-  // Repair any constraints broken by the rebalancer
-descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
-  LOG << "-------------- stats after repairing constraints --------------";
-  LOG << "km1       ="<< metrics::quality(partitioned_hg, context);
-  LOG << "Imbalance ="<<metrics::imbalance(partitioned_hg, context);
-  LOG << (verifyConstraints(partitioned_hg, constraint_graph)? "Constrains were respected after repair" : "!!! Repair failed to respect constrains !!!");
-  LOG << "";
+
   GainCachePtr::deleteGainCache(gain_cache);
 }
 
