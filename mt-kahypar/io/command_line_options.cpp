@@ -1234,15 +1234,14 @@ namespace mt_kahypar {
         throw InvalidInputException("Constraint folder does not exist or is not a directory: " + context.partition.constraint_folder);
       }
 
-      // Extract graph basename without extension
+      // Extract graph basename without extension (e.g., "graph" from "graph.hgr")
       fs::path graph_path(context.partition.graph_filename);
       std::string base = graph_path.stem().string();
 
       std::string found_file;
       for (const auto& entry : fs::directory_iterator(folder)) {
         if (entry.is_regular_file()) {
-          std::string filename = entry.path().filename().string();
-          std::string stem = entry.path().stem().string();
+          std::string stem = entry.path().stem().string(); // name without extension
           if (stem == base) {
             if (!found_file.empty()) {
               throw InvalidInputException(
