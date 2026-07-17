@@ -215,10 +215,12 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                      num_removed_single_pin_hyperedges, hyperedges,
                      hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
 
-  if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
+  if ( !context.partition.constraint_file_name.empty() ) {
     // Build the snapshot from the original, unconstrained edge list first.
-    *original_snapshot = constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
-      hyperedges_weight, hypernodes_weight, num_removed_single_pin_hyperedges, stable_construction);
+    if ( original_snapshot != nullptr ) {
+        *original_snapshot = constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
+          hyperedges_weight, hypernodes_weight, num_removed_single_pin_hyperedges, stable_construction);
+    }
     applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
       num_hypernodes, num_hyperedges, hyperedges, hyperedges_weight);
   }
@@ -242,9 +244,11 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
     EdgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
 
-    if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
+    if (!context.partition.constraint_file_name.empty() ) {
+      if(original_snapshot != nullptr ) {
       *original_snapshot = constructGraph(type, num_vertices, num_edges, edges,
         edges_weight, nodes_weight, stable_construction);
+      }
       applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
         num_vertices, num_edges, edges, edges_weight);
     }
@@ -255,9 +259,11 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
     HyperedgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
 
-    if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
-      *original_snapshot = constructHypergraph(type, num_vertices, num_edges, edges,
-        edges_weight, nodes_weight, 0, stable_construction);
+    if (!context.partition.constraint_file_name.empty() ) {
+      if(original_snapshot != nullptr ) {
+        *original_snapshot = constructHypergraph(type, num_vertices, num_edges, edges,
+          edges_weight, nodes_weight, 0, stable_construction);
+      }
       applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
         num_vertices, num_edges, edges, edges_weight);
     }
