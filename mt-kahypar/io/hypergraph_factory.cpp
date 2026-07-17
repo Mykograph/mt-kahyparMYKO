@@ -38,6 +38,67 @@ namespace io {
 
 namespace {
 
+using ConstraintVector = vec<std::pair<HypernodeID, HypernodeID>>;
+
+void readConstraintFile(const std::string& filename,
+                         ConstraintVector& constraints) {
+  std::ifstream file(filename);
+  if ( !file.is_open() ) {
+    throw InvalidInputException("Could not open constraint file: " + filename);
+  }
+  HypernodeID u = 0;
+  HypernodeID v = 0;
+  while ( file >> u >> v ) {
+    constraints.emplace_back(u, v);
+  }
+  if ( file.bad() ) {
+    throw InvalidInputException("Error while reading constraint file: " + filename);
+  }
+}
+
+// Appends one constraint edge per pair to hyperedges/hyperedges_weight,
+// so the resulting edge list can be passed straight into Factory::construct.
+void applyConstraints(const std::string& constraint_file_name,
+                      const HyperedgeWeight negative_edge_weight,
+                      const HypernodeID num_hypernodes,
+                      HyperedgeID& num_hyperedges,
+                      HyperedgeVector& hyperedges,
+                      vec<HyperedgeWeight>& hyperedges_weight) {
+  ConstraintVector constraints;
+  readConstraintFile(constraint_file_name, constraints);
+
+  for ( const auto& [u, v] : constraints ) {
+    if ( u >= num_hypernodes || v >= num_hypernodes ) {
+      throw InvalidInputException(
+        "Constraint file references node id out of range: (" + STR(u) + ", " + STR(v) + ")");
+    }
+    hyperedges.push_back({ u, v });
+    hyperedges_weight.push_back(negative_edge_weight);
+    ++num_hyperedges;
+  }
+}
+
+// Overload for graphs (Metis format), which use EdgeVector instead of HyperedgeVector.
+void applyConstraints(const std::string& constraint_file_name,
+                      const HyperedgeWeight negative_edge_weight,
+                      const HypernodeID num_nodes,
+                      HyperedgeID& num_edges,
+                      EdgeVector& edges,
+                      vec<HyperedgeWeight>& edges_weight) {
+  ConstraintVector constraints;
+  readConstraintFile(constraint_file_name, constraints);
+
+  for ( const auto& [u, v] : constraints ) {
+    if ( u >= num_nodes || v >= num_nodes ) {
+      throw InvalidInputException(
+        "Constraint file references node id out of range: (" + STR(u) + ", " + STR(v) + ")");
+    }
+    edges.emplace_back(u, v);
+    edges_weight.push_back(negative_edge_weight);
+    ++num_edges;
+  }
+}
+
 template<typename Hypergraph>
 mt_kahypar_hypergraph_t constructHypergraph(const HypernodeID& num_hypernodes,
                                             const HyperedgeID& num_hyperedges,
@@ -141,7 +202,9 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
                                        const mt_kahypar_hypergraph_type_t& type,
                                        const bool stable_construction,
                                        const bool remove_single_pin_hes,
-                                       const bool print_warnings) {
+                                       const bool print_warnings,
+                                       const Context& context,
+                                       mt_kahypar_hypergraph_t* original_snapshot) {
   HyperedgeID num_hyperedges = 0;
   HypernodeID num_hypernodes = 0;
   HyperedgeID num_removed_single_pin_hyperedges = 0;
@@ -151,6 +214,15 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
   readHypergraphFile(filename, num_hyperedges, num_hypernodes,
                      num_removed_single_pin_hyperedges, hyperedges,
                      hyperedges_weight, hypernodes_weight, remove_single_pin_hes, print_warnings);
+
+  if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
+    // Build the snapshot from the original, unconstrained edge list first.
+    *original_snapshot = constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
+      hyperedges_weight, hypernodes_weight, num_removed_single_pin_hyperedges, stable_construction);
+    applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
+      num_hypernodes, num_hyperedges, hyperedges, hyperedges_weight);
+  }
+
   return constructHypergraph(type, num_hypernodes, num_hyperedges, hyperedges,
                              hyperedges_weight, hypernodes_weight,
                              num_removed_single_pin_hyperedges, stable_construction);
@@ -159,7 +231,9 @@ mt_kahypar_hypergraph_t readHMetisFile(const std::string& filename,
 mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
                                       const mt_kahypar_hypergraph_type_t& type,
                                       const bool stable_construction,
-                                      const bool) {
+                                      const bool print_warnings,
+                                      const Context& context,
+                                      mt_kahypar_hypergraph_t* original_snapshot ) {
   HyperedgeID num_edges = 0;
   HypernodeID num_vertices = 0;
   vec<HyperedgeWeight> edges_weight;
@@ -167,11 +241,27 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
   if (type == STATIC_GRAPH || type == DYNAMIC_GRAPH) {
     EdgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+
+    if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
+      *original_snapshot = constructGraph(type, num_vertices, num_edges, edges,
+        edges_weight, nodes_weight, stable_construction);
+      applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
+        num_vertices, num_edges, edges, edges_weight);
+    }
+
     return constructGraph(type, num_vertices, num_edges, edges,
                           edges_weight, nodes_weight, stable_construction);
   } else {
     HyperedgeVector edges;
     readGraphFile(filename, num_edges, num_vertices, edges, edges_weight, nodes_weight);
+
+    if ( original_snapshot != nullptr && !context.partition.constraint_file_name.empty() ) {
+      *original_snapshot = constructHypergraph(type, num_vertices, num_edges, edges,
+        edges_weight, nodes_weight, 0, stable_construction);
+      applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
+        num_vertices, num_edges, edges, edges_weight);
+    }
+
     return constructHypergraph(type, num_vertices, num_edges, edges,
                                edges_weight, nodes_weight, 0, stable_construction);
   }
@@ -185,13 +275,17 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const FileFormat& format,
                                       const bool stable_construction,
                                       const bool remove_single_pin_hes,
-                                      const bool print_warnings) {
+                                      const bool print_warnings,
+                                      const Context& context,
+                                      mt_kahypar_hypergraph_t* original_snapshot ) {
   mt_kahypar_hypergraph_type_t type = to_hypergraph_c_type(preset, instance);
   switch ( format ) {
     case FileFormat::hMetis: return readHMetisFile(
-      filename, type, stable_construction, remove_single_pin_hes, print_warnings);
+      filename, type, stable_construction, remove_single_pin_hes, print_warnings,
+      context, original_snapshot);
     case FileFormat::Metis: return readMetisFile(
-      filename, type, stable_construction, print_warnings);
+      filename, type, stable_construction, print_warnings,
+      context, original_snapshot);
   }
   return mt_kahypar_hypergraph_t { nullptr, NULLPTR_HYPERGRAPH };
 }
@@ -201,14 +295,18 @@ Hypergraph readInputFile(const std::string& filename,
                          const FileFormat& format,
                          const bool stable_construction,
                          const bool remove_single_pin_hes,
-                         const bool print_warnings) {
+                         const bool print_warnings,
+                         const Context& context,
+                         mt_kahypar_hypergraph_t* original_snapshot) {
   mt_kahypar_hypergraph_t hypergraph { nullptr, NULLPTR_HYPERGRAPH };
   switch ( format ) {
     case FileFormat::hMetis: hypergraph = readHMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings);
+      filename, Hypergraph::TYPE, stable_construction, remove_single_pin_hes, print_warnings,
+      context, original_snapshot);
       break;
     case FileFormat::Metis: hypergraph = readMetisFile(
-      filename, Hypergraph::TYPE, stable_construction, print_warnings);
+      filename, Hypergraph::TYPE, stable_construction, print_warnings,
+      context, original_snapshot);
   }
   return std::move(utils::cast<Hypergraph>(hypergraph));
 }
@@ -305,7 +403,9 @@ namespace {
                                              const FileFormat& format,          \
                                              const bool stable_construction,    \
                                              const bool remove_single_pin_hes,  \
-                                             const bool logging)
+                                             const bool logging,                \
+                                             const Context& context,            \
+                                             mt_kahypar_hypergraph_t* original_snapshot)
 }
 
 INSTANTIATE_FUNC_WITH_HYPERGRAPHS(READ_INPUT_FILE)
@@ -315,7 +415,9 @@ template ds::StaticGraph readInputFile(const std::string& filename,
                                        const FileFormat& format,
                                        const bool stable_construction,
                                        const bool remove_single_pin_hes,
-                                       const bool logging);
+                                       const bool logging,
+                                       const Context& context,
+                                       mt_kahypar_hypergraph_t* original_snapshot);
 #endif
 
 }  // namespace io

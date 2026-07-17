@@ -300,7 +300,7 @@ mt_kahypar_target_graph_t* mt_kahypar_read_target_graph_from_file(const char* fi
   TargetGraph* target_graph = nullptr;
   try {
     ds::StaticGraph graph = io::readInputFile<ds::StaticGraph>(file_name, FileFormat::Metis, /*stable_construnction=*/true,
-                                                               /*remove_single_pin_hes=*/true, c.partition.enable_logging);
+                                                               /*remove_single_pin_hes=*/true, c.partition.enable_logging, context);
     target_graph = new TargetGraph(std::move(graph));
   } catch ( std::exception& ex ) {
     *error = to_error(ex);

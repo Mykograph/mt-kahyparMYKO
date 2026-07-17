@@ -258,6 +258,17 @@ namespace mt_kahypar {
       "Fixed vertex file: allows to pre-assign vertices to a block."
     )->check(CLI::ExistingFile);
     app.add_option(
+      "--constraint-file",
+      context.partition.constraint_file_name,
+      "Constraint file: each line contains two node ids, and an edge "
+      "with weight --negative-edge-weight is added between them."
+    )->check(CLI::ExistingFile);
+    app.add_option(
+      "--negative-edge-weight",
+      context.partition.negative_edge_weight,
+      "Weight assigned to edges added from the constraint file."
+    )->capture_default_str();
+    app.add_option(
       "--part-weights",
       context.partition.max_part_weights,
       "Use the specified individual part weights instead of epsilon."

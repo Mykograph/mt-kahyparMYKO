@@ -44,6 +44,9 @@
 #include "mt-kahypar/utils/utilities.h"
 #include "mt-kahypar/utils/exception.h"
 
+#include "mt-kahypar/constraint.h"  
+#include "mt-kahypar/utils/cast.h"
+
 using namespace mt_kahypar;
 using HighResClockTimepoint = std::chrono::time_point<std::chrono::high_resolution_clock>;
 
@@ -102,7 +105,8 @@ int main(int argc, char* argv[]) {
       context.partition.graph_filename, context.partition.preset_type,
       context.partition.instance_type, context.partition.file_format,
       context.preprocessing.stable_construction_of_incident_edges,
-      /*remove_single_pin_hes=*/true, /*print_warnings=*/true);
+      /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
+      context);
   timer.stop_timer("io_hypergraph");
 
   // Read Target Graph
@@ -112,7 +116,8 @@ int main(int argc, char* argv[]) {
       target_graph = std::make_unique<TargetGraph>(
         io::readInputFile<ds::StaticGraph>(
           context.mapping.target_graph_file, FileFormat::Metis,
-          /*stable_construnction=*/true, /*remove_single_pin_hes=*/true, /*print_warnings=*/true));
+          /*stable_construnction=*/true, /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
+          context));
     } else {
       throw InvalidInputException("No target graph file specified (use -g <file> or --target-graph=<file>)!");
     }
@@ -134,6 +139,36 @@ int main(int argc, char* argv[]) {
   mt_kahypar_partitioned_hypergraph_t partitioned_hypergraph =
     PartitionerFacade::partition(hypergraph, context, target_graph.get());
   HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
+
+  if ( !context.partition.constraint_file_name.empty() ) {
+  const mt_kahypar_partition_type_t type = partitioned_hypergraph.type;
+  switch ( type ) {
+    case MULTILEVEL_HYPERGRAPH_PARTITIONING:
+      constraints::postprocessNegativeConstraints(
+        utils::cast<StaticPartitionedHypergraph>(partitioned_hypergraph), context);
+      break;
+    #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
+    case MULTILEVEL_GRAPH_PARTITIONING:
+      constraints::postprocessNegativeConstraints(
+        utils::cast<StaticPartitionedGraph>(partitioned_hypergraph), context);
+      break;
+    #endif
+    #ifdef KAHYPAR_ENABLE_HIGHEST_QUALITY_FEATURES
+    case N_LEVEL_HYPERGRAPH_PARTITIONING:
+      constraints::postprocessNegativeConstraints(
+        utils::cast<DynamicPartitionedHypergraph>(partitioned_hypergraph), context);
+      break;
+    #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
+    case N_LEVEL_GRAPH_PARTITIONING:
+      constraints::postprocessNegativeConstraints(
+        utils::cast<DynamicPartitionedGraph>(partitioned_hypergraph), context);
+      break;
+    #endif
+    #endif
+    default:
+      break;
+  }
+}
 
   // Print Stats
   std::chrono::duration<double> elapsed_seconds(end - start);
