@@ -75,6 +75,7 @@ struct PartitioningParameters {
   std::string graph_filename { };
   std::string fixed_vertex_filename { };
   std::string constraint_file_name { };
+  std::string constraint_folder { };
   HyperedgeWeight negative_edge_weight = 0;
   std::string graph_partition_output_folder {};
   std::string graph_partition_filename { };

@@ -44,6 +44,7 @@
 #include <limits>
 #include <memory>
 #include <string>
+#include <filesystem>   // for --constraint-folder
 
 #include "mt-kahypar/io/presets.h"
 #include "mt-kahypar/utils/exception.h"
@@ -257,12 +258,29 @@ namespace mt_kahypar {
       context.partition.fixed_vertex_filename,
       "Fixed vertex file: allows to pre-assign vertices to a block."
     )->check(CLI::ExistingFile);
-    app.add_option(
+
+    // --constraint-file option (store pointer for mutual exclusion)
+    auto constraint_file_option = app.add_option(
       "--constraint-file",
       context.partition.constraint_file_name,
       "Constraint file: each line contains two node ids, and an edge "
       "with weight --negative-edge-weight is added between them."
     )->check(CLI::ExistingFile);
+
+    // --constraint-folder option: automatically find matching file by graph name
+    auto constraint_folder_option = app.add_option(
+      "--constraint-folder",
+      context.partition.constraint_folder,
+      "Folder containing constraint files. The tool will automatically find the fitting file by matching "
+      "the graph name (without extension) to a file in this folder. Mutually exclusive with --constraint-file."
+    )->check(CLI::ExistingDirectory);
+
+    // Make the two options mutually exclusive
+    if (constraint_file_option && constraint_folder_option) {
+      constraint_file_option->excludes(constraint_folder_option);
+      constraint_folder_option->excludes(constraint_file_option);
+    }
+
     app.add_option(
       "--negative-edge-weight",
       context.partition.negative_edge_weight,
@@ -1208,6 +1226,44 @@ namespace mt_kahypar {
       ERR(e.what());
     }
 
+    // --- Handle --constraint-folder: automatically find the constraint file ---
+    if (!context.partition.constraint_folder.empty()) {
+      namespace fs = std::filesystem;
+      fs::path folder(context.partition.constraint_folder);
+      if (!fs::exists(folder) || !fs::is_directory(folder)) {
+        throw InvalidInputException("Constraint folder does not exist or is not a directory: " + context.partition.constraint_folder);
+      }
+
+      // Extract graph basename without extension
+      fs::path graph_path(context.partition.graph_filename);
+      std::string base = graph_path.stem().string();
+
+      std::string found_file;
+      for (const auto& entry : fs::directory_iterator(folder)) {
+        if (entry.is_regular_file()) {
+          std::string filename = entry.path().filename().string();
+          std::string stem = entry.path().stem().string();
+          if (stem == base) {
+            if (!found_file.empty()) {
+              throw InvalidInputException(
+                "Multiple constraint files found for graph basename '" + base +
+                "' in folder '" + context.partition.constraint_folder +
+                "'. Please specify explicitly using --constraint-file.");
+            }
+            found_file = entry.path().string();
+          }
+        }
+      }
+
+      if (found_file.empty()) {
+        throw InvalidInputException(
+          "No constraint file found for graph basename '" + base +
+          "' in folder '" + context.partition.constraint_folder + "'.");
+      }
+
+      context.partition.constraint_file_name = found_file;
+    }
+
     std::string epsilon_str = std::to_string(context.partition.epsilon);
     epsilon_str.erase(epsilon_str.find_last_not_of('0') + 1, std::string::npos);
 
@@ -1278,4 +1334,4 @@ namespace mt_kahypar {
     app.parse(loadPreset(preset));
   }
 
-}
+}  // namespace mt_kahypar
