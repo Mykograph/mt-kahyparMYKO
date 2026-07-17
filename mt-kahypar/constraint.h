@@ -259,7 +259,7 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   LOG << "Initial violated constraints before any fix: " << initial_violations;
 
   // ---- iterative repair loop ----
-  const size_t max_iterations = 20;   // safety guard
+  const size_t max_iterations = 50;   // safety guard
   size_t iteration = 0;
   bool constraints_ok = false;
   bool balance_ok = false;
@@ -268,34 +268,65 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
     ++iteration;
     LOG << "Iteration " << iteration << ": fixing constraints...";
 
-    // 1. Fix constraints by moving nodes to reduce violations
+    // 1. Fix constraints (descending constraint degree)
     descendingConstraintDegree(partitioned_hg, context, constraint_graph, gain_cache);
 
-    // 2. Check how many violations remain
-    HypernodeID violations_after_fix = countViolatedConstraints(partitioned_hg, constraint_graph);
-    LOG << "Violations after descendingConstraintDegree: " << violations_after_fix;
-    constraints_ok = (violations_after_fix == 0);
-
-    // 3. Check balance
+    // 2. Check constraints and balance after fixing
+    HypernodeID violations = countViolatedConstraints(partitioned_hg, constraint_graph);
     double imbalance = metrics::imbalance(partitioned_hg, context);
-    LOG << "Imbalance after descendingConstraintDegree: " << imbalance;
+    LOG << "After fix: violations = " << violations << ", imbalance = " << imbalance;
+
+    constraints_ok = (violations == 0);
     balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
 
-    // 4. If both are satisfied, we are done
     if (constraints_ok && balance_ok) {
-      LOG << "All constraints satisfied and balance within epsilon after " << iteration << " iterations.";
+      LOG << "Both constraints and balance satisfied after fix.";
       break;
     }
 
-    // 5. If constraints are ok but balance is not, run rebalancer and continue
-    //    If constraints are not ok, we also run rebalancer (maybe it helps), then loop again.
-    LOG << "Running rebalancer to improve imbalance...";
-    Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
-    mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
-    rebalancer->initialize(phg);
-    rebalancer->refine(phg, {}, metrics, 0.0);
+    // 3. If constraints are ok but balance is not, run rebalancer
+    if (constraints_ok && !balance_ok) {
+      LOG << "Constraints ok, running rebalancer to fix imbalance...";
+      Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
+      mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
+      rebalancer->initialize(phg);
+      rebalancer->refine(phg, {}, metrics, 0.0);
 
-    // After rebalancing, we loop back to fix any new constraint violations
+      // 4. Re-check after rebalancer
+      violations = countViolatedConstraints(partitioned_hg, constraint_graph);
+      imbalance = metrics::imbalance(partitioned_hg, context);
+      LOG << "After rebalancer: violations = " << violations << ", imbalance = " << imbalance;
+
+      constraints_ok = (violations == 0);
+      balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
+
+      if (constraints_ok && balance_ok) {
+        LOG << "Both constraints and balance satisfied after rebalancer.";
+        break;
+      }
+    } else {
+      // If constraints are not ok, rebalancing might break them further, so we loop again.
+      // But we can still try rebalancing if imbalance is bad, but better to loop to fix constraints first.
+      // However, sometimes rebalancing helps with constraints indirectly, so we can run it anyway.
+      LOG << "Constraints not ok, rebalancing might help or hurt; will try rebalancer anyway.";
+      Metrics metrics { metrics::quality(partitioned_hg, context), imbalance };
+      mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(partitioned_hg);
+      rebalancer->initialize(phg);
+      rebalancer->refine(phg, {}, metrics, 0.0);
+
+      // After rebalancer, re-check (it may have improved or worsened constraints)
+      violations = countViolatedConstraints(partitioned_hg, constraint_graph);
+      imbalance = metrics::imbalance(partitioned_hg, context);
+      LOG << "After rebalancer: violations = " << violations << ", imbalance = " << imbalance;
+
+      constraints_ok = (violations == 0);
+      balance_ok = (imbalance <= context.partition.epsilon + 1e-9);
+
+      if (constraints_ok && balance_ok) {
+        LOG << "Both constraints and balance satisfied after rebalancer.";
+        break;
+      }
+    }
   }
 
   // ---- final log ----
@@ -305,6 +336,8 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   LOG << "Constraints satisfied: " << (verifyConstraints(partitioned_hg, constraint_graph) ? "yes" : "no");
   if (!constraints_ok || !balance_ok) {
     LOG << "WARNING: Not all constraints satisfied or imbalance exceeds epsilon after " << iteration << " iterations!";
+  } else {
+    LOG << "SUCCESS: All constraints satisfied and imbalance within epsilon.";
   }
   LOG << "";
 
