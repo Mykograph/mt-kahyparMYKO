@@ -259,7 +259,7 @@ namespace mt_kahypar {
       "Fixed vertex file: allows to pre-assign vertices to a block."
     )->check(CLI::ExistingFile);
 
-    // --constraint-file option (store pointer for mutual exclusion)
+    // --constraint-file option
     auto constraint_file_option = app.add_option(
       "--constraint-file",
       context.partition.constraint_file_name,
@@ -267,12 +267,13 @@ namespace mt_kahypar {
       "with weight --negative-edge-weight is added between them."
     )->check(CLI::ExistingFile);
 
-    // --constraint-folder option: automatically find matching file by graph name
+    // --constraint-folder option: construct the expected constraint filename
     auto constraint_folder_option = app.add_option(
       "--constraint-folder",
       context.partition.constraint_folder,
-      "Folder containing constraint files. The tool will automatically find the fitting file by matching "
-      "the graph name (without extension) to a file in this folder. Mutually exclusive with --constraint-file."
+      "Folder containing constraint files. The tool will automatically construct the file name as "
+      "<hypergraph-basename>.<k>.constraints.txt and look for it in this folder. "
+      "Mutually exclusive with --constraint-file."
     )->check(CLI::ExistingDirectory);
 
     // Make the two options mutually exclusive
@@ -1226,89 +1227,60 @@ namespace mt_kahypar {
       ERR(e.what());
     }
 
-    // --- Handle --constraint-folder: automatically find the constraint file ---
+    // --- Handle --constraint-folder: construct the expected file name ---
     if (!context.partition.constraint_folder.empty()) {
       namespace fs = std::filesystem;
-      fs::path folder(context.partition.constraint_folder);
-      if (!fs::exists(folder) || !fs::is_directory(folder)) {
-        throw InvalidInputException("Constraint folder does not exist or is not a directory: " + context.partition.constraint_folder);
-      }
 
-      // Extract the graph name up to and including ".hgr" if present.
-      // If not present, strip known suffixes to get a clean base.
+      // 1. Get the pure filename without the directory
       std::string graph_filename = fs::path(context.partition.graph_filename).filename().string();
-      std::string base;
 
-      size_t hgr_pos = graph_filename.find(".hgr");
-      if (hgr_pos != std::string::npos) {
-        base = graph_filename.substr(0, hgr_pos + 4);
-      } else {
-        // No ".hgr": remove common suffixes to get the core name.
-        base = graph_filename;
+      // 2. Strip known suffixes (part, epsilon, seed, KaHyPar) to get the base name
+      std::string base = graph_filename;
 
-        // Remove .KaHyPar
-        size_t pos = base.rfind(".KaHyPar");
-        if (pos != std::string::npos) base = base.substr(0, pos);
+      // Remove .KaHyPar
+      size_t pos = base.rfind(".KaHyPar");
+      if (pos != std::string::npos) base = base.substr(0, pos);
 
-        // Remove .part followed by digits
-        pos = base.rfind(".part");
-        if (pos != std::string::npos) {
-          size_t end = pos + 5;
-          while (end < base.size() && isdigit(base[end])) ++end;
-          if (end > pos + 5) base = base.substr(0, pos);
-        }
-
-        // Remove .epsilon followed by digits and dots
-        pos = base.rfind(".epsilon");
-        if (pos != std::string::npos) {
-          size_t end = pos + 8;
-          while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
-          if (end > pos + 8) base = base.substr(0, pos);
-        }
-
-        // Remove .seed followed by digits
-        pos = base.rfind(".seed");
-        if (pos != std::string::npos) {
-          size_t end = pos + 5;
-          while (end < base.size() && isdigit(base[end])) ++end;
-          if (end > pos + 5) base = base.substr(0, pos);
-        }
+      // Remove .part followed by digits
+      pos = base.rfind(".part");
+      if (pos != std::string::npos) {
+        size_t end = pos + 5;
+        while (end < base.size() && isdigit(base[end])) ++end;
+        if (end > pos + 5) base = base.substr(0, pos);
       }
 
-      // Search for a file whose name starts with 'base'.
-      // Prefer a file that contains the K value (e.g., ".16.") if present.
-      std::string k_str = "." + std::to_string(context.partition.k) + ".";
-      std::string found_file;
-      bool found_with_k = false;
-
-      for (const auto& entry : fs::directory_iterator(folder)) {
-        if (entry.is_regular_file()) {
-          std::string filename = entry.path().filename().string();
-          if (filename.find(base) == 0) {
-            if (filename.find(k_str) != std::string::npos) {
-              if (!found_with_k) {
-                found_file = entry.path().string();
-                found_with_k = true;
-              } else {
-                throw InvalidInputException(
-                  "Multiple constraint files with K=" + std::to_string(context.partition.k) +
-                  " found for graph base '" + base + "' in folder '" + context.partition.constraint_folder +
-                  "'. Please specify explicitly using --constraint-file.");
-              }
-            } else if (!found_with_k && found_file.empty()) {
-              found_file = entry.path().string();
-            }
-          }
-        }
+      // Remove .epsilon followed by digits and dots
+      pos = base.rfind(".epsilon");
+      if (pos != std::string::npos) {
+        size_t end = pos + 8;
+        while (end < base.size() && (isdigit(base[end]) || base[end] == '.')) ++end;
+        if (end > pos + 8) base = base.substr(0, pos);
       }
 
-      if (found_file.empty()) {
+      // Remove .seed followed by digits
+      pos = base.rfind(".seed");
+      if (pos != std::string::npos) {
+        size_t end = pos + 5;
+        while (end < base.size() && isdigit(base[end])) ++end;
+        if (end > pos + 5) base = base.substr(0, pos);
+      }
+
+      // 3. Construct the expected constraint file name: <base>.<k>.constraints.txt
+      std::string expected_name = base + "." + std::to_string(context.partition.k) + ".constraints.txt";
+
+      // 4. Build the full path
+      fs::path constraint_path = fs::path(context.partition.constraint_folder) / expected_name;
+
+      // 5. Check if the file exists
+      if (!fs::exists(constraint_path)) {
         throw InvalidInputException(
-          "No constraint file found for graph base '" + base +
-          "' in folder '" + context.partition.constraint_folder + "'.");
+          "Constraint file not found: " + constraint_path.string() +
+          "\nExpected name based on graph filename: " + expected_name +
+          "\nMake sure the file exists in the constraint folder.");
       }
 
-      context.partition.constraint_file_name = found_file;
+      // 6. Set the constraint file name
+      context.partition.constraint_file_name = constraint_path.string();
     }
 
     std::string epsilon_str = std::to_string(context.partition.epsilon);
