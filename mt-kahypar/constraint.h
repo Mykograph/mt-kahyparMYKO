@@ -30,6 +30,7 @@
 #include <deque>
 #include <algorithm>
 #include <limits>
+#include <stdexcept>
 
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/factories.h"
@@ -404,13 +405,29 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   LOG << "km1       = " << metrics::quality(partitioned_hg, context);
   LOG << "Imbalance = " << imbalance;
   LOG << "Violations = " << final_viol;
+
+  // Clean up gain cache before we potentially throw, so we don't leak it.
+  GainCachePtr::deleteGainCache(gain_cache);
+
   if (final_viol == 0 && imbalance <= context.partition.epsilon + 1e-9) {
     LOG << "SUCCESS: All constraints satisfied and balance within epsilon.";
   } else {
-    LOG << "WARNING: Violations=" << final_viol << ", imbalance=" << imbalance;
+    // Hard failure: do not allow the caller to silently proceed with an
+    // infeasible / unresolved partition. Surface this as a thrown error
+    // instead of just a log message.
+    std::string msg = "postprocessNegativeConstraints failed to satisfy all constraints: ";
+    if (final_viol > 0) {
+      msg += STR(final_viol) + " constraint violation(s) remain";
+    }
+    if (imbalance > context.partition.epsilon + 1e-9) {
+      if (final_viol > 0) {
+        msg += "; ";
+      }
+      msg += "imbalance " + STR(imbalance) + " exceeds epsilon " + STR(context.partition.epsilon);
+    }
+    LOG << "ERROR: " << msg;
+    throw std::runtime_error(msg);
   }
-
-  GainCachePtr::deleteGainCache(gain_cache);
 }
 
 } // namespace mt_kahypar::constraints
