@@ -43,8 +43,9 @@
 #include "mt-kahypar/utils/randomize.h"
 #include "mt-kahypar/utils/utilities.h"
 #include "mt-kahypar/utils/exception.h"
+#include "mt-kahypar/partition/metrics.h"
 
-#include "mt-kahypar/constraint.h"  
+#include "mt-kahypar/constraint.h"
 #include "mt-kahypar/utils/cast.h"
 
 using namespace mt_kahypar;
@@ -101,12 +102,14 @@ int main(int argc, char* argv[]) {
   utils::Timer& timer =
     utils::Utilities::instance().getTimer(context.utility_id);
   timer.start_timer("io_hypergraph", "I/O Hypergraph");
+  mt_kahypar_hypergraph_t original_hypergraph{ nullptr, NULLPTR_HYPERGRAPH };
+
   mt_kahypar_hypergraph_t hypergraph = io::readInputFile(
       context.partition.graph_filename, context.partition.preset_type,
       context.partition.instance_type, context.partition.file_format,
       context.preprocessing.stable_construction_of_incident_edges,
       /*remove_single_pin_hes=*/true, /*print_warnings=*/true,
-      context);
+      context, &original_hypergraph);
   timer.stop_timer("io_hypergraph");
 
   // Read Target Graph
@@ -141,57 +144,112 @@ int main(int argc, char* argv[]) {
   HighResClockTimepoint end = std::chrono::high_resolution_clock::now();
 
   if ( !context.partition.constraint_file_name.empty() ) {
-  const mt_kahypar_partition_type_t type = partitioned_hypergraph.type;
-  // We'll build the constraint graph once per type
-  switch ( type ) {
-    case MULTILEVEL_HYPERGRAPH_PARTITIONING: {
-      auto& phg = utils::cast<StaticPartitionedHypergraph>(partitioned_hypergraph);
-      HypernodeID num_nodes = phg.initialNumNodes();
-      constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
-          context.partition.constraint_file_name, num_nodes);
-      HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
-      std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
+    const mt_kahypar_partition_type_t type = partitioned_hypergraph.type;
+    // We'll build the constraint graph once per type
+    switch ( type ) {
+      case MULTILEVEL_HYPERGRAPH_PARTITIONING: {
+        auto& phg = utils::cast<StaticPartitionedHypergraph>(partitioned_hypergraph);
+        HypernodeID num_nodes = phg.initialNumNodes();
+        constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
+            context.partition.constraint_file_name, num_nodes);
+        HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
+        std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
 
-      constraints::postprocessNegativeConstraints(phg, context);
+        constraints::postprocessNegativeConstraints(phg, context);
 
-      HypernodeID violated_after = constraints::countViolatedConstraints(phg, cg);
-      if (violated_after > 0) {
-        std::cerr << "ERROR: " << violated_after
-                  << " constraints remain violated after postprocessing!" << std::endl;
-        std::exit(1);
-      } else {
-        std::cout << "All constraints are satisfied after postprocessing." << std::endl;
+        HypernodeID violated_after = constraints::countViolatedConstraints(phg, cg);
+        if (violated_after > 0) {
+          std::cerr << "ERROR: " << violated_after
+                    << " constraints remain violated after postprocessing!" << std::endl;
+          std::exit(1);
+        } else {
+          std::cout << "All constraints are satisfied after postprocessing." << std::endl;
+        }
+
+        // NEW: cut value on the original, unconstrained hypergraph snapshot
+        if ( original_hypergraph.type != NULLPTR_HYPERGRAPH ) {
+          auto& orig_hg = utils::cast<ds::StaticHypergraph>(original_hypergraph);
+          StaticPartitionedHypergraph orig_phg(context.partition.k, orig_hg);
+
+          orig_hg.doParallelForAllNodes([&](const HypernodeID hn) {
+            orig_phg.setOnlyNodePart(hn, phg.partID(hn));
+          });
+          orig_phg.initializePartition();
+
+          const HyperedgeWeight snapshot_cut =
+            metrics::quality(orig_phg, Objective::cut);
+          context.partition.original_hyperedge_weight = snapshot_cut;
+          std::cout << "Cut on original (unconstrained) hypergraph: "
+                    << snapshot_cut << std::endl;
+        }
+        break;
       }
-      break;
-    }
-    // Add similar cases for other partition types (STATIC_GRAPH, DYNAMIC_HYPERGRAPH, etc.)
-    #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
-    case MULTILEVEL_GRAPH_PARTITIONING: {
-      auto& phg = utils::cast<StaticPartitionedGraph>(partitioned_hypergraph);
-      HypernodeID num_nodes = phg.initialNumNodes();
-      constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
-          context.partition.constraint_file_name, num_nodes);
-      HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
-      std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
+      // Add similar cases for other partition types (STATIC_GRAPH, DYNAMIC_HYPERGRAPH, etc.)
+      #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
+      case MULTILEVEL_GRAPH_PARTITIONING: {
+        auto& phg = utils::cast<StaticPartitionedGraph>(partitioned_hypergraph);
+        HypernodeID num_nodes = phg.initialNumNodes();
+        constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
+            context.partition.constraint_file_name, num_nodes);
+        HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
+        std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
 
-      constraints::postprocessNegativeConstraints(phg, context);
+        constraints::postprocessNegativeConstraints(phg, context);
 
-      HypernodeID violated_after = constraints::countViolatedConstraints(phg, cg);
-      if (violated_after > 0) {
-        std::cerr << "ERROR: " << violated_after
-                  << " constraints remain violated after postprocessing!" << std::endl;
-        std::exit(1);
-      } else {
-        std::cout << "All constraints are satisfied after postprocessing." << std::endl;
+        HypernodeID violated_after = constraints::countViolatedConstraints(phg, cg);
+        if (violated_after > 0) {
+          std::cerr << "ERROR: " << violated_after
+                    << " constraints remain violated after postprocessing!" << std::endl;
+          std::exit(1);
+        } else {
+          std::cout << "All constraints are satisfied after postprocessing." << std::endl;
+        }
+
+        // NEW: cut value on the original, unconstrained graph snapshot
+        if ( original_hypergraph.type != NULLPTR_HYPERGRAPH ) {
+          auto& orig_g = utils::cast<ds::StaticGraph>(original_hypergraph);
+          StaticPartitionedGraph orig_pg(context.partition.k, orig_g);
+
+          orig_g.doParallelForAllNodes([&](const HypernodeID hn) {
+            orig_pg.setOnlyNodePart(hn, phg.partID(hn));
+          });
+          orig_pg.initializePartition();
+
+          const HyperedgeWeight snapshot_cut =
+            metrics::quality(orig_pg, Objective::cut);
+          context.partition.original_hyperedge_weight = snapshot_cut;
+          std::cout << "Cut on original (unconstrained) graph: "
+                    << snapshot_cut << std::endl;
+        }
+        break;
       }
-      break;
+      #endif
+      // ... repeat for N_LEVEL variants if enabled ...
+      default:
+        break;
     }
-    #endif
-    // ... repeat for N_LEVEL variants if enabled ...
-    default:
-      break;
+  } else {
+    // No constraint file: there's no separate snapshot, so the "original cut"
+    // is simply the normal cut on the partitioned hypergraph/graph itself.
+    const mt_kahypar_partition_type_t type = partitioned_hypergraph.type;
+    switch ( type ) {
+      case MULTILEVEL_HYPERGRAPH_PARTITIONING: {
+        auto& phg = utils::cast<StaticPartitionedHypergraph>(partitioned_hypergraph);
+        context.partition.original_hyperedge_weight = metrics::quality(phg, Objective::cut);
+        break;
+      }
+      #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
+      case MULTILEVEL_GRAPH_PARTITIONING: {
+        auto& phg = utils::cast<StaticPartitionedGraph>(partitioned_hypergraph);
+        context.partition.original_hyperedge_weight = metrics::quality(phg, Objective::cut);
+        break;
+      }
+      #endif
+      // ... repeat for N_LEVEL variants if enabled ...
+      default:
+        break;
+    }
   }
-}
 
   // Print Stats
   std::chrono::duration<double> elapsed_seconds(end - start);
@@ -218,6 +276,10 @@ int main(int argc, char* argv[]) {
 
   utils::delete_hypergraph(hypergraph);
   utils::delete_partitioned_hypergraph(partitioned_hypergraph);
+
+  if ( original_hypergraph.type != NULLPTR_HYPERGRAPH ) {
+    utils::delete_hypergraph(original_hypergraph);
+  }
 
   return 0;
 }

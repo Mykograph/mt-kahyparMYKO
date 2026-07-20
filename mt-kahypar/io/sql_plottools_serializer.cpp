@@ -196,7 +196,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         oss << " approximation_factor=" << metrics::approximationFactorForProcessMapping(hypergraph, context);
       }
       if ( context.partition.objective != Objective::cut ) {
-        oss << " cut=" << metrics::quality(hypergraph, Objective::cut);
+        oss << " cut=" << context.partition.original_hyperedge_weight;//metrics::quality(hypergraph, Objective::cut);
       }
       if ( context.partition.objective != Objective::km1 ) {
         oss << " km1=" << metrics::quality(hypergraph, Objective::km1);
