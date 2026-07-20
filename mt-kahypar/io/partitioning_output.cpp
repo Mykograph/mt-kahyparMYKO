@@ -453,14 +453,22 @@ namespace mt_kahypar::io {
                        const Context& context,
                        const std::chrono::duration<double>& elapsed_seconds) {
     LOG << "Objectives:";
-    printKeyValue(context.partition.objective, metrics::quality(hypergraph,
-      context), "(primary objective function)");
-    if ( context.partition.objective == Objective::steiner_tree ) {
-      printKeyValue("Approximation Factor",
-        metrics::approximationFactorForProcessMapping(hypergraph, context));
-    }
-    if ( context.partition.objective != Objective::cut ) {
-      printKeyValue(Objective::cut, metrics::quality(hypergraph, Objective::cut));
+    // "cut" is always reported as the cut on the original (unconstrained) hypergraph/graph,
+    // sourced from context.partition.original_hyperedge_weight (set in main.cpp: to the
+    // snapshot cut when a constraint file was used, or to the normal cut on the partitioned
+    // hypergraph otherwise) -- rather than the actual optimized objective value, even when
+    // the objective being optimized is itself cut.
+    if ( context.partition.objective == Objective::cut ) {
+      printKeyValue(Objective::cut, context.partition.original_hyperedge_weight,
+        "(primary objective function)");
+    } else {
+      printKeyValue(context.partition.objective, metrics::quality(hypergraph,
+        context), "(primary objective function)");
+      if ( context.partition.objective == Objective::steiner_tree ) {
+        printKeyValue("Approximation Factor",
+          metrics::approximationFactorForProcessMapping(hypergraph, context));
+      }
+      printKeyValue(Objective::cut, context.partition.original_hyperedge_weight);
     }
     if ( context.partition.objective != Objective::km1 && !PartitionedHypergraph::is_graph ) {
       printKeyValue(Objective::km1, metrics::quality(hypergraph, Objective::km1));

@@ -191,15 +191,20 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
 
     // Metrics
     if ( hypergraph.initialNumEdges() > 0 ) {
-      oss << " " << context.partition.objective << "=" << metrics::quality(hypergraph, context);
-      if ( context.partition.objective == Objective::steiner_tree ) {
-        oss << " approximation_factor=" << metrics::approximationFactorForProcessMapping(hypergraph, context);
+      // "cut" is always reported as the cut on the original (unconstrained) hypergraph/graph,
+      // sourced from context.partition.original_hyperedge_weight (set in main.cpp: to the
+      // snapshot cut when a constraint file was used, or to the normal cut on the partitioned
+      // hypergraph otherwise) -- rather than the actual optimized objective value, even when
+      // the objective being optimized is itself cut.
+      if ( context.partition.objective == Objective::cut ) {
+        oss << " cut=" << context.partition.original_hyperedge_weight;
+      } else {
+        oss << " " << context.partition.objective << "=" << metrics::quality(hypergraph, context);
+        if ( context.partition.objective == Objective::steiner_tree ) {
+          oss << " approximation_factor=" << metrics::approximationFactorForProcessMapping(hypergraph, context);
+        }
+        oss << " cut=" << context.partition.original_hyperedge_weight;
       }
-      // Always report the cut on the original (unconstrained) hypergraph/graph here,
-      // regardless of which objective was actually optimized. context.partition.original_hyperedge_weight
-      // is set in main.cpp: to the snapshot cut when a constraint file was used, or to the
-      // normal cut on the partitioned hypergraph otherwise -- so it's always populated.
-      oss << " cut=" << context.partition.original_hyperedge_weight;
       if ( context.partition.objective != Objective::km1 ) {
         oss << " km1=" << metrics::quality(hypergraph, Objective::km1);
       }
