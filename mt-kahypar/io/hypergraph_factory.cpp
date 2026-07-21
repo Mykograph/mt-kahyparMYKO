@@ -24,6 +24,9 @@
  * SOFTWARE.
  ******************************************************************************/
 
+#include <type_traits>
+#include <utility>
+
 #include "hypergraph_factory.h"
 
 #include "mt-kahypar/macros.h"
@@ -56,46 +59,62 @@ void readConstraintFile(const std::string& filename,
   }
 }
 
-// Appends one constraint edge per pair to hyperedges/hyperedges_weight,
-// so the resulting edge list can be passed straight into Factory::construct.
-void applyConstraints(const std::string& constraint_file_name,
-                      const HyperedgeWeight negative_edge_weight,
-                      const HypernodeID num_hypernodes,
-                      HyperedgeID& num_hyperedges,
-                      HyperedgeVector& hyperedges,
-                      vec<HyperedgeWeight>& hyperedges_weight) {
-  ConstraintVector constraints;
-  readConstraintFile(constraint_file_name, constraints);
-
-  for ( const auto& [u, v] : constraints ) {
-    if ( u >= num_hypernodes || v >= num_hypernodes ) {
-      throw InvalidInputException(
-        "Constraint file references node id out of range: (" + STR(u) + ", " + STR(v) + ")");
-    }
-    hyperedges.push_back({ u, v });
-    hyperedges_weight.push_back(negative_edge_weight);
-    ++num_hyperedges;
-  }
-}
-
-// Overload for graphs (Metis format), which use EdgeVector instead of HyperedgeVector.
+// Applies constraints: if a positive edge exists between u and v, replace it with
+// a negative edge; otherwise add a new negative edge.
+template<typename EdgeContainer>
 void applyConstraints(const std::string& constraint_file_name,
                       const HyperedgeWeight negative_edge_weight,
                       const HypernodeID num_nodes,
                       HyperedgeID& num_edges,
-                      EdgeVector& edges,
+                      EdgeContainer& edges,
                       vec<HyperedgeWeight>& edges_weight) {
   ConstraintVector constraints;
   readConstraintFile(constraint_file_name, constraints);
 
-  for ( const auto& [u, v] : constraints ) {
-    if ( u >= num_nodes || v >= num_nodes ) {
+  using EdgeType = typename EdgeContainer::value_type;
+  constexpr bool is_graph = std::is_same_v<EdgeType, std::pair<HypernodeID, HypernodeID>>;
+  static_assert(is_graph || std::is_same_v<EdgeType, HyperedgeVector::value_type>,
+                "EdgeContainer must be either HyperedgeVector or EdgeVector");
+
+  for (const auto& [u, v] : constraints) {
+    if (u >= num_nodes || v >= num_nodes) {
       throw InvalidInputException(
         "Constraint file references node id out of range: (" + STR(u) + ", " + STR(v) + ")");
     }
-    edges.emplace_back(u, v);
-    edges_weight.push_back(negative_edge_weight);
-    ++num_edges;
+
+    bool found = false;
+    for (size_t i = 0; i < edges.size(); ++i) {
+      const auto& edge = edges[i];
+      bool matches = false;
+
+      if constexpr (is_graph) {
+        matches = (edge.first == u && edge.second == v) ||
+                  (edge.first == v && edge.second == u);
+      } else {
+        if (edge.size() == 2) {
+          matches = (edge[0] == u && edge[1] == v) ||
+                    (edge[0] == v && edge[1] == u);
+        }
+      }
+
+      if (matches) {
+        if (edges_weight[i] > 0) {
+          edges_weight[i] = negative_edge_weight;
+        }
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) {
+      if constexpr (is_graph) {
+        edges.emplace_back(u, v);
+      } else {
+        edges.push_back({u, v});
+      }
+      edges_weight.push_back(negative_edge_weight);
+      ++num_edges;
+    }
   }
 }
 
