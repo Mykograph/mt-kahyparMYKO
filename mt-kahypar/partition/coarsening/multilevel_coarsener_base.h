@@ -89,39 +89,55 @@ class MultilevelCoarsenerBase {
   }
 
   void heuristicHypergraph() {
-    //multiplier supposed to prevent rounding when multiplying with tuning parameter, which is between 0 and 1
-    int multiplier = 10;
-    int multiplier2 = 100;
-    // modify every negative edge, set it to:
-    //nodes in edge * the weight of their incident edges (except the negative one) 
-    for (const HyperedgeID he : _hg.edges()) {
-      _hhg.setEdgeWeight(he, _hg.edgeWeight(he)*multiplier);
-      if (_hg.edgeWeight(he) < 0) {
-        HyperedgeWeight new_weight =  INT32_MAX;
-        HypernodeID pinNr=0;
-        for (const HypernodeID pin : _hg.pins(he)) {
-          HyperedgeWeight accumulator = 0;
+  // multiplier avoids losing resolution to integer rounding once we
+  // multiply by the fractional tuning_parameter below
+  constexpr HyperedgeWeight multiplier = 10;
+  constexpr HyperedgeWeight multiplier2 = 100;
 
-          for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
-            if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
-              float partial_sum= _hg.edgeWeight(incident_he) * 10 ;
-              if(_context.heuristicEdgeSize){
-                partial_sum *= (multiplier2 / _hg.edgeSize(incident_he));}
-              accumulator += partial_sum;
+  for (const HyperedgeID he : _hg.edges()) {
+    const HyperedgeWeight original_weight = _hg.edgeWeight(he);
+    const HyperedgeWeight original_scaled = original_weight * multiplier;
+    _hhg.setEdgeWeight(he, original_scaled);
+
+    if (original_weight < 0) {
+      // For each pin of this negative edge, sum the (scaled) weights of its
+      // *other* positive incident edges. The minimum such sum over all pins
+      // becomes the magnitude of the heuristic replacement value.
+      double min_positive_sum = std::numeric_limits<double>::max();
+      bool found_any_pin_sum = false;
+
+      for (const HypernodeID pin : _hg.pins(he)) {
+        double accumulator = 0.0;
+        for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
+          if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
+            double partial_sum = static_cast<double>(_hg.edgeWeight(incident_he)) * multiplier;
+            if (_context.heuristicEdgeSize) {
+              // cast to double first, otherwise this is integer division
+              partial_sum *= (static_cast<double>(multiplier2) / _hg.edgeSize(incident_he));
             }
-            
-          }
-          if (accumulator < new_weight) {
-            new_weight = accumulator;
-            pinNr = pin;
+            accumulator += partial_sum;
           }
         }
-        //Setting negative edge weight times the tuning parameter
-        if((-new_weight * _context.tuning_parameter) > _hhg.edgeWeight(he)){
-          _hhg.setEdgeWeight(he, -new_weight * _context.tuning_parameter);
+        if (accumulator < min_positive_sum) {
+          min_positive_sum = accumulator;
+          found_any_pin_sum = true;
         }
       }
+
+      if (found_any_pin_sum) {
+        const double heuristic_value = -min_positive_sum;
+        const double t = _context.tuning_parameter; // expected in [0, 1]
+
+        // Smooth interpolation:
+        //   t = 0  -> original (scaled) weight
+        //   t = 1  -> fully replaced by the heuristic value
+        const double interpolated = (1.0 - t) * original_scaled + t * heuristic_value;
+
+        _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(interpolated)));
+      }
+      // if no pin has any positive incident edge, leave the original scaled weight in place
     }
+  }
 }
 
   PartitionedHypergraph& currentPartitionedHypergraph() {
