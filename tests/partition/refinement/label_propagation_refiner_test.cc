@@ -188,6 +188,39 @@ typedef ::testing::Types<TestConfig<StaticHypergraphTypeTraits, 2, false, Object
 
 TYPED_TEST_SUITE(ALabelPropagationRefiner, TestConfigs);
 
+TYPED_TEST(ALabelPropagationRefiner, MovesIsolatedNodeToNonAdjacentBlock) {
+  using GainComputation = typename TestFixture::GainTypes::GainComputation;
+
+  if (this->context.partition.k < 3) {
+    GTEST_SKIP() << "test requires k >= 3 to have a non-adjacent block available";
+  }
+
+  const HypernodeID hn = 0;
+  const PartitionID from = this->partitioned_hypergraph.partID(hn);
+
+  GainComputation gain_computation(this->context, /*disable_randomization=*/true);
+  auto& tmp_scores = gain_computation.localScores();
+  tmp_scores.clear();
+
+  // Force every real adjacent block to look bad: gain(to) = isolated_gain - tmp_scores[to],
+  // so a very negative tmp_scores[to] produces a strongly positive (worsening) gain.
+  for (const auto& he : this->partitioned_hypergraph.incidentEdges(hn)) {
+    for (const PartitionID to : this->partitioned_hypergraph.connectivitySet(he)) {
+      if (to != from) tmp_scores[to] = -1000;
+    }
+  }
+
+  const Gain isolated_gain = -50; // deliberately better (more negative) than any adjacent option
+
+  Move best_move = gain_computation.computeMaxGainMoveForScores(
+      this->partitioned_hypergraph, tmp_scores, isolated_gain, hn,
+      /*rebalance=*/false, /*consider_non_adjacent_blocks=*/true, /*allow_imbalance=*/false);
+
+  ASSERT_FALSE(tmp_scores.contains(best_move.to));
+  ASSERT_NE(best_move.to, from);
+  ASSERT_EQ(best_move.gain, isolated_gain);
+}
+
 TYPED_TEST(ALabelPropagationRefiner, UpdatesImbalanceCorrectly) {
   mt_kahypar_partitioned_hypergraph_t phg = utils::partitioned_hg_cast(this->partitioned_hypergraph);
   this->refiner->refine(phg, {}, this->metrics, std::numeric_limits<double>::max());

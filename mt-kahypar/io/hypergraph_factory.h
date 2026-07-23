@@ -23,7 +23,7 @@ mt_kahypar_hypergraph_t readInputFile(const std::string& filename,
                                       const bool stable_construction,
                                       const bool remove_single_pin_hes,
                                       const bool print_warnings,
-                                      const Context& context,
+                                      const Context& context=Context(),
                                       mt_kahypar_hypergraph_t* original_snapshot = nullptr);
 
 template<typename Hypergraph>
@@ -32,7 +32,7 @@ Hypergraph readInputFile(const std::string& filename,
                          const bool stable_construction,
                          const bool remove_single_pin_hes,
                          const bool print_warnings,
-                         const Context& context,
+                         const Context& context = Context(),
                          mt_kahypar_hypergraph_t* original_snapshot = nullptr);
 
 void addFixedVertices(mt_kahypar_hypergraph_t hypergraph,
