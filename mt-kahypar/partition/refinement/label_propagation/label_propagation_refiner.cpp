@@ -47,10 +47,10 @@ namespace mt_kahypar {
                                                            const F& objective_delta) {
     bool is_moved = false;
     ASSERT(hn != kInvalidHypernode);
-    if ( hypergraph.isBorderNode(hn) && !hypergraph.isFixed(hn) ) {
+    if (!hypergraph.isFixed(hn) ) {
       ASSERT(hypergraph.nodeIsEnabled(hn));
 
-      Move best_move = _gain.computeMaxGainMove(hypergraph, hn, false, false, unconstrained);
+      Move best_move = _gain.computeMaxGainMove(hypergraph, hn, false, true, unconstrained);
       // We perform a move if it either improves the solution quality or, in case of a
       // zero gain move, the balance of the solution.
       const bool positive_gain = best_move.gain < 0;
@@ -337,9 +337,9 @@ namespace mt_kahypar {
       _might_be_uninitialized = false;
       if ( _context.refinement.label_propagation.execute_sequential ) {
         for ( const HypernodeID hn : hypergraph.nodes() ) {
-          if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
+          //if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn)) {
             _active_nodes.push_back(hn);
-          }
+          //}
           if ( _context.refinement.label_propagation.unconstrained ) {
             _old_part[hn] = hypergraph.partID(hn);
           }
@@ -349,10 +349,10 @@ namespace mt_kahypar {
         // A node is active, if it is a border vertex.
         NextActiveNodes tmp_active_nodes;
         hypergraph.doParallelForAllNodes([&](const HypernodeID& hn) {
-          if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
+          //if ( _context.refinement.label_propagation.rebalancing || hypergraph.isBorderNode(hn) ) {
             if ( _next_active.compare_and_set_to_true(hn) ) {
               tmp_active_nodes.stream(hn);
-            }
+            //}
           }
           if ( _context.refinement.label_propagation.unconstrained ) {
             _old_part[hn] = hypergraph.partID(hn);
