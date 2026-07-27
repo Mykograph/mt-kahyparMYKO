@@ -126,12 +126,15 @@ class MultilevelCoarsenerBase {
 
       if (found_any_pin_sum) {
         const double heuristic_value = -min_positive_sum;
-        const double t = _context.tuning_parameter; // expected in [0, 1]
+        const double t = _context.tuning_parameter; 
 
         // Smooth interpolation:
         //   t = 0  -> original (scaled) weight
         //   t = 1  -> fully replaced by the heuristic value
         const double interpolated = (1.0 - t) * original_scaled + t * heuristic_value;
+        if (t=0.99) {
+          interpolated=0;
+        }
 
         _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(interpolated)));
       }
