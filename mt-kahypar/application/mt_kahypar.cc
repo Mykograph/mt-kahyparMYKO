@@ -154,7 +154,7 @@ int main(int argc, char* argv[]) {
             context.partition.constraint_file_name, num_nodes);
         HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
         std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
-
+            
         constraints::postprocessNegativeConstraints(phg, context);
 
         HypernodeID violated_after = constraints::countViolatedConstraints(phg, cg);
@@ -184,7 +184,7 @@ int main(int argc, char* argv[]) {
         }
         break;
       }
-      // Add similar cases for other partition types (STATIC_GRAPH, DYNAMIC_HYPERGRAPH, etc.)
+      // Add similar cases for other partition types (STATIC_GRAPH, DYNAMIC_HYPERGRAPH, etc.)???
       #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
       case MULTILEVEL_GRAPH_PARTITIONING: {
         auto& phg = utils::cast<StaticPartitionedGraph>(partitioned_hypergraph);
