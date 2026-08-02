@@ -359,7 +359,7 @@ void robustConstraintFixes(PartitionedHypergraph& partitioned_hg,
 // Main postprocessing entry point 
 template<typename PartitionedHypergraph>
 void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
-                                    const Context& context) {
+                                    Context& context) {
   if (context.partition.constraint_file_name.empty()) {
     return;
   }
