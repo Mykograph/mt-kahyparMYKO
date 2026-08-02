@@ -100,9 +100,6 @@ class MultilevelCoarsenerBase {
     _hhg.setEdgeWeight(he, original_scaled);
 
     if (original_weight < 0) {
-      // For each pin of this negative edge, sum the (scaled) weights of its
-      // *other* positive incident edges. The minimum such sum over all pins
-      // becomes the magnitude of the heuristic replacement value.
       double min_positive_sum = std::numeric_limits<double>::max();
       bool found_any_pin_sum = false;
 
@@ -111,10 +108,9 @@ class MultilevelCoarsenerBase {
         for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
           if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
             double partial_sum = static_cast<double>(_hg.edgeWeight(incident_he)) * multiplier;
-            if (_context.heuristicEdgeSize) {
-              // cast to double first, otherwise this is integer division
-              partial_sum *= (static_cast<double>(multiplier2) / _hg.edgeSize(incident_he));
-            }
+            //if (_context.heuristicEdgeSize) {
+            //  partial_sum *= (static_cast<double>(multiplier2) / _hg.edgeSize(incident_he));
+            //}
             accumulator += partial_sum;
           }
         }

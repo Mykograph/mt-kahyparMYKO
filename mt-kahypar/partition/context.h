@@ -79,6 +79,7 @@ struct PartitioningParameters {
   HyperedgeWeight negative_edge_weight = 0;
   HyperedgeWeight original_hyperedge_weight = 0;
   bool use_negative_weights = true;
+  HyperedgeWeight violated_constraints_after_refinement = 0;
   std::string graph_partition_output_folder {};
   std::string graph_partition_filename { };
   std::string graph_community_filename { };

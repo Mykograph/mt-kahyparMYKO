@@ -42,9 +42,7 @@
 
 namespace mt_kahypar::constraints {
 
-// ----------------------------------------------------------------------------
-// ConstraintGraph – flat adjacency list (unchanged from your version)
-// ----------------------------------------------------------------------------
+// ConstraintGraph – flat adjacency list 
 struct ConstraintGraph {
   explicit ConstraintGraph(const HypernodeID num_hypernodes) :
     adjacency(num_hypernodes) { }
@@ -79,7 +77,7 @@ struct ConstraintGraph {
 
 namespace {
 
-// Reads constraint pairs from file (unchanged)
+// Reads constraint pairs from file 
 inline void readConstraintPairs(const std::string& filename,
                                 vec<std::pair<HypernodeID, HypernodeID>>& constraints) {
   std::ifstream file(filename);
@@ -113,9 +111,7 @@ inline ConstraintGraph buildConstraintGraph(const std::string& constraint_file_n
   return graph;
 }
 
-// ----------------------------------------------------------------------------
-// Helper: count violated constraints (pairs in the same block)
-// ----------------------------------------------------------------------------
+// Helper: count violated constraints 
 template<typename PartitionedHypergraph>
 HypernodeID countViolatedConstraints(const PartitionedHypergraph& partitioned_hg,
                                      const ConstraintGraph& constraint_graph) {
@@ -148,9 +144,7 @@ bool verifyConstraints(const PartitionedHypergraph& partitioned_hg,
   return true;
 }
 
-// ----------------------------------------------------------------------------
-// Core fixing helpers (adopted from the good version)
-// ----------------------------------------------------------------------------
+// Core fixing helpers 
 
 // Counts how many constraint neighbours of a node are in the same block
 template<typename PartitionedHypergraph>
@@ -166,8 +160,8 @@ HypernodeID incidentNodesInSamePart(const PartitionedHypergraph& partitioned_hg,
 }
 
 // Picks the partition with maximum gain, respecting:
-//   - invalid_partitions (occupied by a constraint neighbour)
-//   - capacity limits (partWeight(p) + node_weight <= max_part_weight[p])
+//   - invalid_partitions 
+//   - capacity limits 
 template<typename PartitionedHypergraph>
 PartitionID getBestPartitionWithCapacity(const HypernodeID node_id,
                                          const PartitionID current_partition,
@@ -197,10 +191,9 @@ PartitionID getBestPartitionWithCapacity(const HypernodeID node_id,
   return best;
 }
 
-// ----------------------------------------------------------------------------
+
 // Propagation-based fixer – processes a queue of violating nodes and
 // propagates moves to neighbours.
-// ----------------------------------------------------------------------------
 template<typename PartitionedHypergraph>
 void propagateConstraintFixes(PartitionedHypergraph& partitioned_hg,
                               ConstraintGraph& constraint_graph,
@@ -277,9 +270,7 @@ void propagateConstraintFixes(PartitionedHypergraph& partitioned_hg,
   LOG << "propagateConstraintFixes moved=" << moves << " max_moves=" << max_moves;
 }
 
-// ----------------------------------------------------------------------------
-// Robust iterative fixer with pinning (for stubborn cases)
-// ----------------------------------------------------------------------------
+// Robust iterative fixer with pinning 
 template<typename PartitionedHypergraph>
 void robustConstraintFixes(PartitionedHypergraph& partitioned_hg,
                            ConstraintGraph& constraint_graph,
@@ -365,9 +356,7 @@ void robustConstraintFixes(PartitionedHypergraph& partitioned_hg,
   }
 }
 
-// ----------------------------------------------------------------------------
-// Main postprocessing entry point – no separate rebalancer!
-// ----------------------------------------------------------------------------
+// Main postprocessing entry point 
 template<typename PartitionedHypergraph>
 void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
                                     const Context& context) {
@@ -383,6 +372,7 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   // Log initial violations
   const HypernodeID init_viol = countViolatedConstraints(partitioned_hg, constraint_graph);
   LOG << "Initial violated constraints: " << init_viol;
+  context.partition.violated_constraints_after_refinement = init_viol;
 
   // Construct gain cache
   gain_cache_t gain_cache = GainCachePtr::constructGainCache(context);
@@ -406,15 +396,12 @@ void postprocessNegativeConstraints(PartitionedHypergraph& partitioned_hg,
   LOG << "Imbalance = " << imbalance;
   LOG << "Violations = " << final_viol;
 
-  // Clean up gain cache before we potentially throw, so we don't leak it.
+  // Clean up gain cache 
   GainCachePtr::deleteGainCache(gain_cache);
 
   if (final_viol == 0 && imbalance <= context.partition.epsilon + 1e-9) {
     LOG << "SUCCESS: All constraints satisfied and balance within epsilon.";
   } else {
-    // Hard failure: do not allow the caller to silently proceed with an
-    // infeasible / unresolved partition. Surface this as a thrown error
-    // instead of just a log message.
     std::string msg = "postprocessNegativeConstraints failed to satisfy all constraints: ";
     if (final_viol > 0) {
       msg += STR(final_viol) + " constraint violation(s) remain";

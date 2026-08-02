@@ -218,6 +218,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
     oss << " coarsened_nodes=" << context.coarsened_num_nodes;   
     oss << " coarsened_edges=" << context.coarsened_num_edges;
     oss << " totalPartitionTime=" << elapsed_seconds.count();
+    oss << " violated_constraints_after_refinement=" << context.partition.violated_constraints_after_refinement;
 
     // Timings
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
