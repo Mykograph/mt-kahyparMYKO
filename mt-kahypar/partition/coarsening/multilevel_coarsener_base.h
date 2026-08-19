@@ -88,7 +88,7 @@ class MultilevelCoarsenerBase {
     }
   }
 
-  void heuristicHypergraph() {
+    void heuristicHypergraph() {
   // multiplier avoids losing resolution to integer rounding once we
   // multiply by the fractional tuning_parameter below
   constexpr HyperedgeWeight multiplier = 10;
@@ -100,9 +100,6 @@ class MultilevelCoarsenerBase {
     _hhg.setEdgeWeight(he, original_scaled);
 
     if (original_weight < 0) {
-      // For each pin of this negative edge, sum the (scaled) weights of its
-      // *other* positive incident edges. The minimum such sum over all pins
-      // becomes the magnitude of the heuristic replacement value.
       double min_positive_sum = std::numeric_limits<double>::max();
       bool found_any_pin_sum = false;
 
@@ -111,10 +108,9 @@ class MultilevelCoarsenerBase {
         for (const HyperedgeID incident_he : _hg.incidentEdges(pin)) {
           if (incident_he != he && _hg.edgeWeight(incident_he) > 0) {
             double partial_sum = static_cast<double>(_hg.edgeWeight(incident_he)) * multiplier;
-            if (_context.heuristicEdgeSize) {
-              // cast to double first, otherwise this is integer division
-              partial_sum *= (static_cast<double>(multiplier2) / _hg.edgeSize(incident_he));
-            }
+            //if (_context.heuristicEdgeSize) {
+            //  partial_sum *= (static_cast<double>(multiplier2) / _hg.edgeSize(incident_he));
+            //}
             accumulator += partial_sum;
           }
         }
@@ -127,13 +123,19 @@ class MultilevelCoarsenerBase {
       if (found_any_pin_sum) {
         const double heuristic_value = -min_positive_sum;
         const double t = _context.tuning_parameter; // expected in [0, 1]
+	//LOG << "heuristic_value: " << heuristic_value;
 
         // Smooth interpolation:
         //   t = 0  -> original (scaled) weight
         //   t = 1  -> fully replaced by the heuristic value
         const double interpolated = (1.0 - t) * original_scaled + t * heuristic_value;
-
-        _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(interpolated)));
+	//LOG << "iterpolated: " << interpolated;
+  if (t < 0) {
+    _hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(t)));
+  }
+	else if (std::abs(interpolated) < std::abs(original_scaled)) {
+        	_hhg.setEdgeWeight(he, static_cast<HyperedgeWeight>(std::llround(interpolated)));
+	}
       }
       // if no pin has any positive incident edge, leave the original scaled weight in place
     }

@@ -228,7 +228,7 @@ namespace mt_kahypar {
         "--tuning-parameter",
         context.tuning_parameter,
         "Tuning parameter for heuristic coarsening (default: 1.0)"
-      )->check(CLI::Range(0.0, 1.0));
+      );
 
       app.add_flag(
         "--heuristic-edge-size",
