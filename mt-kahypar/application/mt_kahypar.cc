@@ -166,7 +166,9 @@ int main(int argc, char* argv[]) {
           std::cout << "All constraints are satisfied after postprocessing." << std::endl;
         }
 
-        // NEW: cut value on the original, unconstrained hypergraph snapshot
+        // Evaluate all original-graph metrics on the same snapshot used for the
+        // constraint-adjusted optimization, so the reported values are on the
+        // unconstrained graph, not on the post-constraint graph with synthetic negatives.
         if ( original_hypergraph.type != NULLPTR_HYPERGRAPH ) {
           auto& orig_hg = utils::cast<ds::StaticHypergraph>(original_hypergraph);
           StaticPartitionedHypergraph orig_phg(context.partition.k, orig_hg);
@@ -176,11 +178,14 @@ int main(int argc, char* argv[]) {
           });
           orig_phg.initializePartition();
 
-          const HyperedgeWeight snapshot_cut =
-            metrics::quality(orig_phg, Objective::cut);
+          const HyperedgeWeight snapshot_cut = metrics::quality(orig_phg, Objective::cut);
+          const HyperedgeWeight snapshot_km1 = metrics::quality(orig_phg, Objective::km1);
           context.partition.original_hyperedge_weight = snapshot_cut;
+          context.partition.original_km1 = snapshot_km1;
           std::cout << "Cut on original (unconstrained) hypergraph: "
                     << snapshot_cut << std::endl;
+          std::cout << "KM1 on original (unconstrained) hypergraph: "
+                    << snapshot_km1 << std::endl;
         }
         break;
       }
@@ -205,7 +210,9 @@ int main(int argc, char* argv[]) {
           std::cout << "All constraints are satisfied after postprocessing." << std::endl;
         }
 
-        // NEW: cut value on the original, unconstrained graph snapshot
+        // Evaluate all original-graph metrics on the same snapshot used for the
+        // constraint-adjusted optimization, so the reported values are on the
+        // unconstrained graph, not on the post-constraint graph with synthetic negatives.
         if ( original_hypergraph.type != NULLPTR_HYPERGRAPH ) {
           auto& orig_g = utils::cast<ds::StaticGraph>(original_hypergraph);
           StaticPartitionedGraph orig_pg(context.partition.k, orig_g);
@@ -215,11 +222,14 @@ int main(int argc, char* argv[]) {
           });
           orig_pg.initializePartition();
 
-          const HyperedgeWeight snapshot_cut =
-            metrics::quality(orig_pg, Objective::cut);
+          const HyperedgeWeight snapshot_cut = metrics::quality(orig_pg, Objective::cut);
+          const HyperedgeWeight snapshot_km1 = metrics::quality(orig_pg, Objective::km1);
           context.partition.original_hyperedge_weight = snapshot_cut;
+          context.partition.original_km1 = snapshot_km1;
           std::cout << "Cut on original (unconstrained) graph: "
                     << snapshot_cut << std::endl;
+          std::cout << "KM1 on original (unconstrained) graph: "
+                    << snapshot_km1 << std::endl;
         }
         break;
       }
@@ -236,12 +246,14 @@ int main(int argc, char* argv[]) {
       case MULTILEVEL_HYPERGRAPH_PARTITIONING: {
         auto& phg = utils::cast<StaticPartitionedHypergraph>(partitioned_hypergraph);
         context.partition.original_hyperedge_weight = metrics::quality(phg, Objective::cut);
+        context.partition.original_km1 = metrics::quality(phg, Objective::km1);
         break;
       }
       #ifdef KAHYPAR_ENABLE_GRAPH_PARTITIONING_FEATURES
       case MULTILEVEL_GRAPH_PARTITIONING: {
         auto& phg = utils::cast<StaticPartitionedGraph>(partitioned_hypergraph);
         context.partition.original_hyperedge_weight = metrics::quality(phg, Objective::cut);
+        context.partition.original_km1 = metrics::quality(phg, Objective::km1);
         break;
       }
       #endif

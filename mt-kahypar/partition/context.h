@@ -78,6 +78,7 @@ struct PartitioningParameters {
   std::string constraint_folder { };
   HyperedgeWeight negative_edge_weight = 0;
   HyperedgeWeight original_hyperedge_weight = 0;
+  HyperedgeWeight original_km1 = 0;
   std::string graph_partition_output_folder {};
   std::string graph_partition_filename { };
   std::string graph_community_filename { };

@@ -6,6 +6,7 @@
 #include "include/mtkahypartypes.h"
 
 #include "mt-kahypar/datastructures/hypergraph_common.h"
+#include "mt-kahypar/partition/context.h"
 #include "mt-kahypar/partition/context_enum_classes.h"
 #include "mt-kahypar/utils/cast.h"
 

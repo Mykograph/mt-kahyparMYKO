@@ -471,7 +471,7 @@ namespace mt_kahypar::io {
       printKeyValue(Objective::cut, context.partition.original_hyperedge_weight);
     }
     if ( context.partition.objective != Objective::km1 && !PartitionedHypergraph::is_graph ) {
-      printKeyValue(Objective::km1, metrics::quality(hypergraph, Objective::km1));
+      printKeyValue(Objective::km1, context.partition.original_km1);
     }
     if ( context.partition.objective != Objective::soed && !PartitionedHypergraph::is_graph ) {
       printKeyValue(Objective::soed, metrics::quality(hypergraph, Objective::soed));

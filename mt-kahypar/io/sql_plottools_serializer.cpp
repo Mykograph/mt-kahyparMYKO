@@ -206,7 +206,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
         oss << " cut=" << context.partition.original_hyperedge_weight;
       }
       if ( context.partition.objective != Objective::km1 ) {
-        oss << " km1=" << metrics::quality(hypergraph, Objective::km1);
+        oss << " km1=" << context.partition.original_km1;
       }
       if ( context.partition.objective != Objective::soed ) {
         oss << " soed=" << metrics::quality(hypergraph, Objective::soed);

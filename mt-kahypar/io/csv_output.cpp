@@ -70,8 +70,8 @@ namespace mt_kahypar::io::csv {
     s << metrics::imbalance(phg, context) << sep;
 
     s << context.partition.objective << sep;
-    s << metrics::quality(phg, Objective::km1) << sep;
-    s << context.partition.original_hyperedge_weight << sep;//metrics::quality(phg, Objective::cut) << sep;
+    s << context.partition.original_km1 << sep;
+    s << context.partition.original_hyperedge_weight << sep;
     s << context.initial_km1 << sep;
     s << elapsed_seconds.count() << sep;
 

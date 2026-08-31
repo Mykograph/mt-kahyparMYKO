@@ -265,6 +265,30 @@ TYPED_TEST(AConcurrentHypergraph, VerifyBorderNodesSmokeTest) {
   verifyBorderNodes(this->hypergraph);
 }
 
+TEST(PartitionedHypergraph, NegativeEdgesDoNotContributeToOriginalCutMetric) {
+  using Hypergraph = ds::StaticHypergraph;
+  using PartitionedHypergraph = ds::PartitionedHypergraph;
+
+  Hypergraph hg = Hypergraph::Factory::construct(
+    3, 2,
+    { {0, 1}, {1, 2} },
+    nullptr, nullptr, true);
+
+  std::vector<HyperedgeWeight> weights = { 5, -7 };
+  hg = Hypergraph::Factory::construct(
+    3, 2,
+    { {0, 1}, {1, 2} },
+    weights.data(), nullptr, true);
+
+  PartitionedHypergraph phg(2, hg, parallel_tag_t());
+  phg.setNodePart(0, 0);
+  phg.setNodePart(1, 0);
+  phg.setNodePart(2, 1);
+  phg.initializePartition();
+
+  ASSERT_EQ(metrics::quality(phg, Objective::cut), 5);
+  ASSERT_EQ(metrics::negative_cut_edges(phg, true), 0);
+}
 
 }  // namespace ds
 }  // namespace mt_kahypar
