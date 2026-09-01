@@ -153,6 +153,7 @@ int main(int argc, char* argv[]) {
         constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
             context.partition.constraint_file_name, num_nodes);
         HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
+        context.partition.violated_constraints = static_cast<int>(violated_before);
         std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
 
         constraints::postprocessNegativeConstraints(phg, context);
@@ -197,6 +198,7 @@ int main(int argc, char* argv[]) {
         constraints::ConstraintGraph cg = constraints::buildConstraintGraph(
             context.partition.constraint_file_name, num_nodes);
         HypernodeID violated_before = constraints::countViolatedConstraints(phg, cg);
+        context.partition.violated_constraints = static_cast<int>(violated_before);
         std::cout << "Number of violated constraints before postprocessing: " << violated_before << std::endl;
 
         constraints::postprocessNegativeConstraints(phg, context);

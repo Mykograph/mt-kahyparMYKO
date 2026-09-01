@@ -40,7 +40,7 @@ namespace mt_kahypar::io::csv {
 
   std::string header() {
     return "algorithm,threads,graph,k,seed,epsilon,imbalance,"
-           "objective,km1,cut,initial_km1,partitionTime,fmTime,lpTime,coarseningTime,ipTime,preprocessingTime"
+           "objective,km1,cut,initial_km1,violated_constraints,partitionTime,fmTime,lpTime,coarseningTime,ipTime,preprocessingTime"
            "\n";
   }
 
@@ -73,6 +73,7 @@ namespace mt_kahypar::io::csv {
     s << context.partition.original_km1 << sep;
     s << context.partition.original_hyperedge_weight << sep;
     s << context.initial_km1 << sep;
+    s << context.partition.violated_constraints << sep;
     s << elapsed_seconds.count() << sep;
 
     utils::Timer& timer = utils::Utilities::instance().getTimer(context.utility_id);
