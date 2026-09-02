@@ -28,6 +28,7 @@
 #include "csv_output.h"
 
 #include <sstream>
+#include <iostream>   // <-- ADD THIS for std::cout
 
 #include "mt-kahypar/definitions.h"
 #include "mt-kahypar/partition/metrics.h"
@@ -83,6 +84,10 @@ namespace mt_kahypar::io::csv {
     s << timer.get("coarsening") << sep;
     s << timer.get("initial_partitioning") << sep;
     s << timer.get("preprocessing");
+
+    // ************* ADD THIS KEY-VALUE OUTPUT *************
+    std::cout << "violated_constraints=" << context.partition.violated_constraints << std::endl;
+    // *****************************************************
 
     return s.str();
   }
