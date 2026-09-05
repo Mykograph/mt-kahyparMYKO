@@ -287,6 +287,12 @@ namespace mt_kahypar {
       context.partition.negative_edge_weight,
       "Weight assigned to edges added from the constraint file."
     )->capture_default_str();
+    app.add_flag(
+      "--use-negative-weights",
+      context.partition.use_negative_weights,
+      "Enable the use of negative weights from the constraint file."
+    );
+
     app.add_option(
       "--part-weights",
       context.partition.max_part_weights,

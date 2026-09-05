@@ -268,8 +268,10 @@ mt_kahypar_hypergraph_t readMetisFile(const std::string& filename,
       *original_snapshot = constructGraph(type, num_vertices, num_edges, edges,
         edges_weight, nodes_weight, stable_construction);
       }
-      applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
+      if (context.partition.use_negative_weights) {
+        applyConstraints(context.partition.constraint_file_name, context.partition.negative_edge_weight,
         num_vertices, num_edges, edges, edges_weight);
+      }
     }
 
     return constructGraph(type, num_vertices, num_edges, edges,
