@@ -219,7 +219,7 @@ std::string serialize(const PartitionedHypergraph& hypergraph,
     oss << " coarsened_edges=" << context.coarsened_num_edges;
     
     // ************* ADD violated_constraints HERE *************
-    oss << " violated_constraints=" << context.partition.violated_constraints;
+    oss << " violated_constraints_after_refinement=" << context.partition.violated_constraints;
     // *********************************************************
     oss << " totalPartitionTime=" << elapsed_seconds.count();
 
